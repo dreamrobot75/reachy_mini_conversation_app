@@ -12,11 +12,101 @@ tags:
  - reachy_mini_python_app
 ---
 
-# Reachy Mini conversation app
+# Reachy Mini 한국어 데스크 동반자 (DeskMate)
 
-Conversational app for the Reachy Mini robot combining realtime voice, vision, personality-aware tools, and choreographed motion.
+**OpenAI `gpt-realtime` 모델로 한국어를 듣고 한국어로 말하는 감정 반응형 스마트 데스크 동반자.**
+Pollen Robotics의 [reachy_mini_conversation_app](https://github.com/pollen-robotics/reachy_mini_conversation_app)을
+베이스로, 책상 위에서 함께 지내는 한국어 컴패니언 시나리오를 구현한 팀 fork입니다.
 
 ![Reachy Mini Dance](docs/assets/reachy_mini_dance.gif)
+
+실행 한 번으로 아래 루프가 무한 반복됩니다:
+
+```
+실행 → (데몬 자동 시작) → 자동 기상 → 한국어 대화·도구 사용
+        ↑                                   |
+        |                             "종료해 줘" (음성)
+        |                                   ↓
+        +──── "깨어나 리치미니" (음성) ← 슬립 대기 (취침 포즈, 듣기 전용)
+```
+
+`Ctrl+C`로만 앱이 진짜 종료되며, 이때도 취침 모션과 함께 자연스럽게 잠듭니다.
+
+## 기존 코드 대비 개선 사항
+
+| 기능 | 내용 | upstream 대비 |
+| :--- | :--- | :--- |
+| **OpenAI Realtime 백엔드** | `CONVERSATION_BACKEND=openai` 설정만으로 전체 앱이 `gpt-realtime`/`gpt-realtime-mini`로 동작. 24 kHz 오디오 양방향 리샘플링(마이크 16k↔모델 24k↔스피커 16k), OpenAI 보이스 카탈로그(marin, cedar 등) UI 연동 포함 | 신규 (기존은 Hugging Face 백엔드 전용) |
+| **한국어 데스크 동반자 페르소나** | `profiles/desk_companion_ko/` — 존댓말 한국어 응답, 음성 종료 명령의 확실한 도구 호출 규칙, 한국어 기상 인사 | 신규 |
+| **슬립 대기 ↔ 웨이크 루프** | 음성 "종료해 줘" → 취침 포즈로 대기(세션은 듣기 전용 유지), "깨어나/리치미니/일어나" 전사 감지 시 기상 모션 + 인사 + 대화 재개 | 신규 (기존은 음성 종료 = 앱 종료) |
+| **데몬 연결 대상 .env 선택** | `REACHY_MINI_HOST`로 실물(IP)/시뮬레이터(sim) 접속을 선택. 시뮬 지정 시 네트워크 실물로 잘못 붙는 사고 방지 | 신규 (기존은 SDK auto 탐색만) |
+| **원격 데몬 자동 시작** | 로봇 전원만 켜져 있으면 stopped 상태 데몬을 자동 기동 후 접속(opt-in). 기동 직후 미디어 준비 경쟁 조건도 재시도로 처리 | 신규 |
+| **종료 시 자연스러운 취침** | `Ctrl+C` 종료 시 취침 모션 후 종료 (대시보드발 앱 중지는 upstream 동작 유지) | 신규 |
+
+구현 원칙: upstream 핵심 파일(`huggingface_realtime.py` 등)은 수정하지 않고 서브클래스
+(`openai_realtime.py`)로만 확장해, 주간 upstream 동기화 시 충돌이 없습니다. 설계·계획
+문서는 [`oss_plan/`](oss_plan/)에 있습니다.
+
+## 빠른 시작 (한국어 데모)
+
+1. 설치는 아래 [Installation](#installation) 참고 (`uv sync` 또는 `pip install -e .`)
+2. `.env.example`을 `.env`로 복사하고 다음을 설정:
+
+```env
+# OpenAI 백엔드 + 한국어
+CONVERSATION_BACKEND=openai
+OPENAI_API_KEY=sk-...
+REALTIME_TRANSCRIPTION_LANGUAGE=ko
+REACHY_MINI_CUSTOM_PROFILE=desk_companion_ko
+
+# 로봇 연결 — 실물(IP) 또는 시뮬레이터(sim) 중 선택
+REACHY_MINI_HOST=192.168.0.144
+REACHY_MINI_AUTO_START_DAEMON=1
+```
+
+3. 실행:
+
+```bash
+reachy-mini-conversation-app --ui    # 웹 UI: http://127.0.0.1:7860/
+```
+
+4. 대화 → **"종료해 줘"** → 취침 대기 → **"깨어나 리치미니"** → 대화 재개.
+   끝낼 때는 콘솔에서 `Ctrl+C`.
+
+> [!NOTE]
+> Windows에서는 실행 전 `$env:PYTHONUTF8 = "1"`을 설정하면 한국어 로그 깨짐을 방지할 수 있습니다.
+
+## 이 fork가 추가한 .env 설정
+
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `CONVERSATION_BACKEND` | `hf` | `openai`로 설정하면 OpenAI Realtime 백엔드 사용. 미설정 시 기존 Hugging Face 동작 그대로 |
+| `OPENAI_API_KEY` | — | `openai` 백엔드 필수 |
+| `OPENAI_REALTIME_MODEL` | `gpt-realtime-mini` | 데모 품질이 필요하면 `gpt-realtime`으로 승급 |
+| `OPENAI_VOICE` | `marin` | OpenAI 보이스 (marin, cedar, alloy, ash, ballad, coral, echo, sage, shimmer, verse) |
+| `REACHY_MINI_HOST` | (SDK auto) | `sim`/`localhost` = 로컬 데몬 전용, IP/호스트명 = 해당 실물 데몬 접속 |
+| `REACHY_MINI_PORT` | `8000` | 데몬 포트 |
+| `REACHY_MINI_AUTO_START_DAEMON` | `0` | `1`이면 stopped 상태의 원격 데몬을 접속 전에 자동 시작 (모터 전원이 켜지는 물리 동작이라 opt-in) |
+| `REACHY_MINI_SLEEP_ON_EXIT` | `1` | `Ctrl+C` 종료 시 취침 모션 실행 (`0`으로 끄기) |
+| `REACHY_MINI_STANDBY_ON_SLEEP` | `1` | 음성 종료를 슬립 대기(웨이크 루프)로 전환. `0`이면 기존처럼 앱 종료 |
+| `REACHY_MINI_WAKE_PHRASES` | `깨어나,리치미니,일어나` | 쉼표 구분 웨이크 문구. 전사에서 공백·문장부호 무시 부분 일치 |
+
+> [!WARNING]
+> 슬립 대기 중에도 마이크 오디오가 OpenAI로 전송되어 **입력 과금이 계속됩니다**
+> (`gpt-realtime-mini` 기준 시간당 수백 원 수준). 장시간 자리를 비울 때는 `Ctrl+C`로
+> 종료하세요. 로컬 웨이크워드 엔진 교체는 로드맵에 있습니다.
+
+기존 upstream 변수(`REALTIME_TRANSCRIPTION_LANGUAGE`, `HF_*`, `REACHY_MINI_APP_TIMEOUT_MINUTES` 등)는
+아래 [Configuration](#configuration)과 `.env.example`을 참고하세요.
+
+---
+
+# Upstream documentation
+
+이하는 베이스 앱(Pollen Robotics upstream)의 문서입니다. 설치·아키텍처·도구·고급 기능은
+이 fork에서도 동일하게 적용됩니다.
+
+Conversational app for the Reachy Mini robot combining realtime voice, vision, personality-aware tools, and choreographed motion.
 
 ## Table of contents
 
@@ -96,16 +186,17 @@ pip install -e .[dev]                   # Development tools
 ## Configuration
 
 The default setup uses the Hugging Face backend and does not require an API key.
+(이 fork에서 OpenAI 백엔드를 쓰려면 위의 [이 fork가 추가한 .env 설정](#이-fork가-추가한-env-설정) 참고.)
 
 Copy `.env.example` to `.env` when you want to point Hugging Face at your own local endpoint.
 
 | Variable | Description |
 |----------|-------------|
-| `REALTIME_TRANSCRIPTION_LANGUAGE` | Optional input transcription language for the realtime backend. Defaults to `en`; set to a backend-supported code such as `zh` for Chinese. |
+| `REALTIME_TRANSCRIPTION_LANGUAGE` | Optional input transcription language for the realtime backend. Defaults to `en`; set to a backend-supported code such as `ko` for Korean. |
 | `HF_REALTIME_CONNECTION_MODE` | Hugging Face connection selector: `deployed` uses the built-in Hugging Face server; `local` uses `HF_REALTIME_WS_URL`. Defaults to `deployed`. |
 | `HF_REALTIME_WS_URL` | Direct websocket endpoint for your own Hugging Face backend. Accepts either a base URL like `ws://127.0.0.1:8765/v1` or the full websocket URL `ws://127.0.0.1:8765/v1/realtime`. Used when `HF_REALTIME_CONNECTION_MODE=local`. |
 | `HF_TOKEN` | Optional token for Hugging Face access. Local endpoints receive only this explicitly configured token. |
-| `REACHY_MINI_APP_TIMEOUT_MINUTES` | Minutes of inactivity before Reachy goes to sleep and the app stops. Defaults to `1440` (one day); set to `0` to disable. |
+| `REACHY_MINI_APP_TIMEOUT_MINUTES` | Minutes of inactivity before Reachy goes to sleep. Defaults to `1440` (one day); set to `0` to disable. |
 
 ### Hugging Face Connection Modes
 
@@ -157,7 +248,7 @@ reachy-mini-conversation-app
 ```
 
 > [!TIP]
-> Make sure the Reachy Mini daemon is running before launching the app. If you see a `TimeoutError`, it means the daemon isn't started. See [Reachy Mini's SDK](https://github.com/pollen-robotics/reachy_mini/) for setup instructions.
+> Make sure the Reachy Mini daemon is running before launching the app. If you see a `TimeoutError`, it means the daemon isn't started. See [Reachy Mini's SDK](https://github.com/pollen-robotics/reachy_mini/) for setup instructions. (이 fork에서는 `REACHY_MINI_AUTO_START_DAEMON=1`로 원격 데몬을 자동 시작할 수 있습니다.)
 
 The app runs in console mode. Add `--ui` to serve the web interface at http://127.0.0.1:7860/.
 
@@ -195,7 +286,7 @@ Every bundled profile enables `head_tracking` by default; users can still disabl
 | `idle_do_nothing` | Explicitly remain idle during an idle turn. Not intended for normal conversation turns. | Core install only. |
 | `move_head` | Queue a head pose change (left/right/up/down/front). | Core install only. |
 | `head_tracking` | Follow the user's face with the head, or stop following. | Core install only. Requires a daemon with the `vision` extra and a camera. |
-| `go_to_sleep` | Run Reachy's sleep movement and stop the current app after an explicit user request. | Core install only. |
+| `go_to_sleep` | Run Reachy's sleep movement after an explicit user request. In this fork it enters the standby wake loop by default. | Core install only. |
 | `sweep_look` | Sweep Reachy's head left, right, and back to center. | Shared tool, enabled by default in the default profile. |
 | `remember` | Save one short, stable fact about the user for future sessions. | Core install only. Stored in the app instance data directory. |
 | `forget` | Remove a saved memory fact by matching a short query. | Core install only. |
@@ -376,6 +467,8 @@ reachy-mini-conversation-app --robot-name <name>
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and [`AGENTS.md`](AGENTS.md) for coding-agent standards.
+
+이 fork의 팀 협업 규칙(브랜치·PR·담당)은 [`CLAUDE.md`](CLAUDE.md)와 [`oss_plan/`](oss_plan/)을 참고하세요.
 
 ## License
 
