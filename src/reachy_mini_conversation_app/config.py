@@ -75,6 +75,43 @@ OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime"
 DEFAULT_OPENAI_REALTIME_MODEL = "gpt-realtime-mini"
 DEFAULT_OPENAI_VOICE = "marin"
 
+# --- Robot daemon connection target ------------------------------------------
+REACHY_MINI_HOST_ENV = "REACHY_MINI_HOST"
+REACHY_MINI_PORT_ENV = "REACHY_MINI_PORT"
+DEFAULT_DAEMON_PORT = 8000
+_LOCAL_DAEMON_HOST_ALIASES = {"sim", "localhost", "127.0.0.1"}
+
+
+@dataclass(frozen=True)
+class DaemonConnection:
+    """Resolved robot daemon connection target for ReachyMini(...) kwargs."""
+
+    host: str | None
+    port: int
+    connection_mode: str | None  # None -> keep the SDK default ("auto")
+
+
+def resolve_daemon_connection(host_value: str | None, port_value: str | None) -> DaemonConnection:
+    """Map REACHY_MINI_HOST/REACHY_MINI_PORT values onto ReachyMini connection kwargs."""
+    port = DEFAULT_DAEMON_PORT
+    raw_port = (port_value or "").strip()
+    if raw_port:
+        try:
+            parsed_port = int(raw_port)
+        except ValueError:
+            parsed_port = -1
+        if 0 < parsed_port < 65536:
+            port = parsed_port
+        else:
+            logger.warning("Invalid %s=%r; using %d.", REACHY_MINI_PORT_ENV, port_value, DEFAULT_DAEMON_PORT)
+
+    host = (host_value or "").strip()
+    if not host:
+        return DaemonConnection(host=None, port=port, connection_mode=None)
+    if host.lower() in _LOCAL_DAEMON_HOST_ALIASES:
+        return DaemonConnection(host=None, port=port, connection_mode="localhost_only")
+    return DaemonConnection(host=host, port=port, connection_mode="network")
+
 
 @dataclass(frozen=True)
 class HFBackendDefaults:
@@ -346,6 +383,8 @@ class Config:
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     OPENAI_REALTIME_MODEL = (os.getenv("OPENAI_REALTIME_MODEL") or "").strip() or DEFAULT_OPENAI_REALTIME_MODEL
     OPENAI_VOICE = (os.getenv("OPENAI_VOICE") or "").strip() or DEFAULT_OPENAI_VOICE
+    REACHY_MINI_HOST = os.getenv(REACHY_MINI_HOST_ENV)
+    REACHY_MINI_PORT = os.getenv(REACHY_MINI_PORT_ENV)
 
     logger.debug(
         "HF mode: %s, HF session URL set: %s, HF direct URL set: %s",
@@ -462,6 +501,8 @@ def refresh_runtime_config_from_env() -> None:
     config.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     config.OPENAI_REALTIME_MODEL = (os.getenv("OPENAI_REALTIME_MODEL") or "").strip() or DEFAULT_OPENAI_REALTIME_MODEL
     config.OPENAI_VOICE = (os.getenv("OPENAI_VOICE") or "").strip() or DEFAULT_OPENAI_VOICE
+    config.REACHY_MINI_HOST = os.getenv(REACHY_MINI_HOST_ENV)
+    config.REACHY_MINI_PORT = os.getenv(REACHY_MINI_PORT_ENV)
     config.REACHY_MINI_CUSTOM_PROFILE = LOCKED_PROFILE or os.getenv("REACHY_MINI_CUSTOM_PROFILE")
 
 

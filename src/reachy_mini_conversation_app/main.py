@@ -91,6 +91,7 @@ def run(
         HF_LOCAL_CONNECTION_MODE,
         config,
         set_instance_path,
+        resolve_daemon_connection,
         get_hf_connection_selection,
         resolve_app_timeout_minutes,
         refresh_runtime_config_from_env,
@@ -141,11 +142,22 @@ def run(
 
     if robot is None:
         try:
-            robot_kwargs = {}
+            robot_kwargs: dict[str, Any] = {}
             if args.robot_name is not None:
                 robot_kwargs["robot_name"] = args.robot_name
 
-            logger.info("Initializing ReachyMini (SDK will auto-detect appropriate backend)")
+            daemon_connection = resolve_daemon_connection(config.REACHY_MINI_HOST, config.REACHY_MINI_PORT)
+            if daemon_connection.connection_mode is not None:
+                robot_kwargs["connection_mode"] = daemon_connection.connection_mode
+            if daemon_connection.host is not None:
+                robot_kwargs["host"] = daemon_connection.host
+            robot_kwargs["port"] = daemon_connection.port
+            logger.info(
+                "Connecting to Reachy Mini daemon (%s, %s:%d)",
+                daemon_connection.connection_mode or "auto",
+                daemon_connection.host or "localhost",
+                daemon_connection.port,
+            )
             robot = ReachyMini(**robot_kwargs)
 
         except TimeoutError as e:
