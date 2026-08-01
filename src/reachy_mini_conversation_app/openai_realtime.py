@@ -5,14 +5,21 @@ Only the Hugging Face-specific attachment points are overridden (client/auth,
 tool plumbing, and idle policy are inherited unchanged.
 """
 
+import re
 import base64
+import asyncio
 import logging
-from typing import Tuple
+from typing import Any, Tuple, Sequence
 
 import numpy as np
 from openai import AsyncOpenAI
 from numpy.typing import NDArray
-from openai.types.realtime import RealtimeSessionCreateRequestParam
+from openai.types.realtime import (
+    RealtimeAudioConfigParam,
+    RealtimeAudioConfigInputParam,
+    RealtimeSessionCreateRequestParam,
+)
+from openai.types.realtime.realtime_audio_input_turn_detection_param import ServerVad
 
 from reachy_mini_conversation_app.config import OPENAI_REALTIME_URL, DEFAULT_OPENAI_VOICE, config
 from reachy_mini_conversation_app.prompts import get_session_voice
@@ -52,6 +59,38 @@ FALLBACK_OUTPUT_SAMPLE_RATE: int = 16000
 
 # 3-tap binomial low-pass applied before downsampling to limit aliasing.
 _ANTI_ALIAS_KERNEL = np.array([0.25, 0.5, 0.25], dtype=np.float64)
+
+# Wake phrases matched against user transcripts while in standby.
+DEFAULT_WAKE_PHRASES: tuple[str, ...] = ("깨어나", "리치미니", "일어나")
+
+# Prompt queued after waking so the model opens the conversation itself.
+WAKE_GREETING_PROMPT = (
+    "(사용자가 방금 웨이크 워드로 너를 깨웠다. 한국어로 짧고 반갑게 인사하고 무엇을 도울지 물어보라.)"
+)
+
+
+def _normalize_for_wake(text: str) -> str:
+    """Strip whitespace/punctuation and lowercase so STT spelling variants match."""
+    return re.sub(r"[\W_]+", "", text.lower())
+
+
+def matches_wake_phrase(transcript: str, phrases: Sequence[str]) -> bool:
+    """Return whether the transcript loosely contains any wake phrase."""
+    normalized = _normalize_for_wake(transcript)
+    if not normalized:
+        return False
+    for phrase in phrases:
+        normalized_phrase = _normalize_for_wake(phrase)
+        if normalized_phrase and normalized_phrase in normalized:
+            return True
+    return False
+
+
+def configured_wake_phrases() -> list[str]:
+    """Return REACHY_MINI_WAKE_PHRASES as a list, defaulting to the Korean set."""
+    raw = (getattr(config, "REACHY_MINI_WAKE_PHRASES", None) or "").strip()
+    phrases = [phrase.strip() for phrase in raw.split(",") if phrase.strip()]
+    return phrases or list(DEFAULT_WAKE_PHRASES)
 
 
 def _default_openai_voice() -> str:
@@ -105,6 +144,121 @@ class OpenAIRealtimeHandler(HuggingFaceRealtimeHandler):
     SAMPLE_RATE = OPENAI_TARGET_SAMPLE_RATE
 
     _output_sample_rate: int | None = None
+    _standby: bool = False
+    _standby_loop: "asyncio.AbstractEventLoop | None" = None
+
+    # --- standby (sleep-wait) state machine ---------------------------------
+
+    @property
+    def in_standby(self) -> bool:
+        """Return whether the handler is in sleep-wait (transcription-only) mode."""
+        return self._standby
+
+    def request_standby(self) -> dict[str, Any]:
+        """Thread-safe standby entry for the synchronous go_to_sleep tool path."""
+        loop = self._standby_loop
+        if loop is None or not loop.is_running():
+            return {"error": "standby unavailable: no active realtime session"}
+        future = asyncio.run_coroutine_threadsafe(self.enter_standby(), loop)
+        try:
+            return future.result(timeout=30.0)
+        except Exception as e:
+            logger.error("Failed to enter standby: %s", e)
+            return {"error": f"standby failed: {type(e).__name__}: {e}"}
+
+    async def enter_standby(self) -> dict[str, Any]:
+        """Sleep pose + transcription-only session; wake phrases resume later."""
+        if self._standby:
+            return {"status": "standby", "message": "Already in standby."}
+        logger.info("Entering standby: sleep pose, listening for wake phrases %s", configured_wake_phrases())
+        self._standby = True
+        try:
+            self.deps.movement_manager.stop(reset_to_neutral=False)
+            await asyncio.to_thread(self.deps.reachy_mini.goto_sleep)
+        except Exception as e:
+            logger.warning("Standby sleep motion failed: %s", e)
+        await self._update_turn_detection(transcription_only=True)
+        return {
+            "status": "standby",
+            "message": "Reachy is now sleeping and will wake on the wake phrase. Do not respond further.",
+        }
+
+    async def wake_from_standby(self) -> None:
+        """Wake motion, restore auto-responses, and greet the user."""
+        if not self._standby:
+            return
+        logger.info("Wake phrase detected; waking from standby")
+        self._standby = False
+        try:
+            self.deps.movement_manager.start()
+        except Exception as e:
+            logger.warning("Failed to restart movement manager after standby: %s", e)
+        try:
+            await asyncio.to_thread(self._run_wake_up_motion)
+        except Exception as e:
+            logger.warning("Wake-up movement failed: %s", e)
+        await self._update_turn_detection(transcription_only=False)
+        await self._send_wake_greeting()
+
+    def _run_wake_up_motion(self) -> None:
+        """Enable motors and run the SDK wake-up move (app_lifecycle pattern)."""
+        robot = self.deps.reachy_mini
+        robot.enable_motors()
+        robot.wake_up()
+
+    async def _update_turn_detection(self, *, transcription_only: bool) -> None:
+        """Switch server VAD between transcription-only and normal conversation."""
+        if not self.connection:
+            return
+        if transcription_only:
+            turn_detection = ServerVad(type="server_vad", create_response=False, interrupt_response=False)
+        else:
+            turn_detection = ServerVad(type="server_vad", interrupt_response=True)
+        try:
+            await self.connection.session.update(
+                session=RealtimeSessionCreateRequestParam(
+                    type="realtime",
+                    audio=RealtimeAudioConfigParam(
+                        input=RealtimeAudioConfigInputParam(turn_detection=turn_detection),
+                    ),
+                ),
+            )
+        except Exception as e:
+            logger.warning("Failed to update session turn detection: %s", e)
+
+    async def _send_wake_greeting(self) -> None:
+        """Queue a prompt so the model greets the user right after waking."""
+        if not self.connection:
+            return
+        try:
+            await self.connection.conversation.item.create(
+                item={
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": WAKE_GREETING_PROMPT}],
+                },
+            )
+            await self._safe_response_create()
+        except Exception as e:
+            logger.warning("Failed to queue wake greeting: %s", e)
+
+    def _emit_transcript(self, role: str, text: str, final: bool = True) -> None:
+        """Watch user transcripts for wake phrases while in standby."""
+        if self._standby and role == "user" and final and matches_wake_phrase(text, configured_wake_phrases()):
+            loop = self._standby_loop
+            if loop is not None and loop.is_running():
+                loop.create_task(self.wake_from_standby())
+            else:
+                logger.warning("Wake phrase heard but no running session loop to wake on")
+        super()._emit_transcript(role, text, final)
+
+    def _idle_behavior_ready(self) -> bool:
+        """Suppress idle behaviors entirely while sleeping in standby."""
+        if self._standby:
+            return False
+        return super()._idle_behavior_ready()
+
+    # --- client/session -----------------------------------------------------
 
     def _get_output_sample_rate(self) -> int:
         """Return (and cache) the playback device rate, falling back to 16 kHz."""
@@ -152,6 +306,7 @@ class OpenAIRealtimeHandler(HuggingFaceRealtimeHandler):
 
     async def _build_realtime_client(self) -> AsyncOpenAI:
         """Build the OpenAI realtime client from OPENAI_API_KEY."""
+        self._standby_loop = asyncio.get_running_loop()
         api_key = (getattr(config, "OPENAI_API_KEY", None) or "").strip()
         if not api_key:
             raise RuntimeError("CONVERSATION_BACKEND=openai requires OPENAI_API_KEY to be set")
