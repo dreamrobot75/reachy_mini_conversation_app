@@ -108,7 +108,9 @@ async def test_wake_from_standby_restores_session_and_greets() -> None:
     handler.deps.reachy_mini.enable_motors.assert_called_once()
     handler.deps.reachy_mini.wake_up.assert_called_once()
     turn_detection = handler.connection.session_updates[-1]["session"]["audio"]["input"]["turn_detection"]
-    assert turn_detection.get("create_response", True) is not False
+    # The server merges session updates, so create_response must be explicitly
+    # re-enabled — omitting it would leave the standby False in place.
+    assert turn_detection["create_response"] is True
     assert handler.connection.created_items, "wake greeting item must be queued"
     monkeypatch_safe_response.assert_awaited_once()
 

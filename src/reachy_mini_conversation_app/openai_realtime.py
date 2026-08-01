@@ -213,7 +213,9 @@ class OpenAIRealtimeHandler(HuggingFaceRealtimeHandler):
         if transcription_only:
             turn_detection = ServerVad(type="server_vad", create_response=False, interrupt_response=False)
         else:
-            turn_detection = ServerVad(type="server_vad", interrupt_response=True)
+            # Explicit create_response=True: the server merges session updates,
+            # so omitting the key would keep the standby False in effect.
+            turn_detection = ServerVad(type="server_vad", create_response=True, interrupt_response=True)
         try:
             await self.connection.session.update(
                 session=RealtimeSessionCreateRequestParam(
