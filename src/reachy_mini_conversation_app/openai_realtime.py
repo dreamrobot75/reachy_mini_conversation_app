@@ -185,11 +185,15 @@ class OpenAIRealtimeHandler(HuggingFaceRealtimeHandler):
             "message": "Reachy is now sleeping and will wake on the wake phrase. Do not respond further.",
         }
 
-    async def wake_from_standby(self) -> None:
-        """Wake motion, restore auto-responses, and greet the user."""
+    async def wake_from_standby(self, *, greet: bool = True) -> None:
+        """Wake motion, restore auto-responses, and optionally greet the user.
+
+        greet=False is used when something else is about to speak (e.g. a timer
+        completion announcement) so the robot does not double-greet.
+        """
         if not self._standby:
             return
-        logger.info("Wake phrase detected; waking from standby")
+        logger.info("Waking from standby (greet=%s)", greet)
         self._standby = False
         try:
             self.deps.movement_manager.start()
@@ -201,7 +205,29 @@ class OpenAIRealtimeHandler(HuggingFaceRealtimeHandler):
             logger.warning("Wake-up movement failed: %s", e)
         await self._gaze_toward_wake_caller()
         await self._update_turn_detection(transcription_only=False)
-        await self._send_wake_greeting()
+        if greet:
+            await self._send_wake_greeting()
+
+    async def _handle_tool_result(self, completed_tool: Any) -> None:
+        """Wake first when a background tool (e.g. a timer) finishes during standby.
+
+        Tool-result announcements bypass the standby response mute, so without
+        this the robot would talk while still in the sleep pose. go_to_sleep is
+        excluded — its completion is what enters standby in the first place.
+        """
+        from reachy_mini_conversation_app.tools.tool_constants import ToolState
+
+        if (
+            self._standby
+            and getattr(completed_tool, "tool_name", "") != "go_to_sleep"
+            and getattr(completed_tool, "status", None) in (ToolState.COMPLETED, ToolState.FAILED)
+        ):
+            logger.info(
+                "Background tool %r finished during standby; waking to announce",
+                getattr(completed_tool, "tool_name", "?"),
+            )
+            await self.wake_from_standby(greet=False)
+        await super()._handle_tool_result(completed_tool)
 
     def _run_wake_up_motion(self) -> None:
         """Enable motors and run the SDK wake-up move (app_lifecycle pattern)."""

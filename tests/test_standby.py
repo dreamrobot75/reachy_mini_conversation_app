@@ -132,6 +132,64 @@ async def test_user_transcript_with_wake_phrase_triggers_wake(monkeypatch: Any) 
 
 
 @pytest.mark.asyncio
+async def test_tool_completion_during_standby_wakes_without_greeting(monkeypatch: Any) -> None:
+    """A timer finishing while asleep wakes the robot (no wake greeting) before announcing."""
+    import reachy_mini_conversation_app.huggingface_realtime as hf_mod
+    from reachy_mini_conversation_app.tools.tool_constants import ToolState
+
+    handler = _make_handler()
+    handler._standby = True
+    parent_handle = AsyncMock()
+    monkeypatch.setattr(hf_mod.HuggingFaceRealtimeHandler, "_handle_tool_result", parent_handle)
+    wake = AsyncMock()
+    monkeypatch.setattr(handler, "wake_from_standby", wake)
+
+    notification = MagicMock()
+    notification.tool_name = "pomodoro_timer"
+    notification.status = ToolState.COMPLETED
+
+    await handler._handle_tool_result(notification)
+
+    wake.assert_awaited_once_with(greet=False)
+    parent_handle.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_go_to_sleep_completion_does_not_wake(monkeypatch: Any) -> None:
+    """The go_to_sleep tool completing right after standby entry must not wake."""
+    import reachy_mini_conversation_app.huggingface_realtime as hf_mod
+    from reachy_mini_conversation_app.tools.tool_constants import ToolState
+
+    handler = _make_handler()
+    handler._standby = True
+    monkeypatch.setattr(hf_mod.HuggingFaceRealtimeHandler, "_handle_tool_result", AsyncMock())
+    wake = AsyncMock()
+    monkeypatch.setattr(handler, "wake_from_standby", wake)
+
+    notification = MagicMock()
+    notification.tool_name = "go_to_sleep"
+    notification.status = ToolState.COMPLETED
+
+    await handler._handle_tool_result(notification)
+
+    wake.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_wake_without_greeting_skips_greeting_item() -> None:
+    """wake_from_standby(greet=False) restores the session but stays silent."""
+    handler = _make_handler()
+    handler.connection = _FakeConnection()
+    handler._standby = True
+    handler._safe_response_create = AsyncMock()  # type: ignore[method-assign]
+
+    await handler.wake_from_standby(greet=False)
+
+    assert handler.in_standby is False
+    assert handler.connection.created_items == []
+
+
+@pytest.mark.asyncio
 async def test_assistant_transcript_never_triggers_wake(monkeypatch: Any) -> None:
     """Assistant text mentioning wake words must not wake the robot."""
     handler = _make_handler()
