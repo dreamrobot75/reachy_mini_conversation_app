@@ -68,7 +68,9 @@
    `REALTIME_TRANSCRIPTION_LANGUAGE` 재사용
 3. **샘플레이트** — `SAMPLE_RATE = 24000` + `receive()` 오버라이드: 마이크 프레임
    (로봇 미디어 계층 네이티브, 통상 16 kHz)을 24 kHz로 리샘플 후 전송. 출력 오디오는
-   output_queue 튜플에 24 kHz가 실려 기존 재생 경로가 그대로 처리
+   `emit()` 오버라이드에서 재생 장치 샘플레이트(통상 16 kHz)로 다운샘플 후 전달
+   — 로봇 재생 파이프라인이 16 kHz 고정이라 24 kHz를 그대로 보내면 1.5배 느리게 재생됨
+   (구현 중 발견되어 최초 가정을 수정)
 4. **보이스 목록** — OpenAI 보이스(marin, cedar, alloy 등)로 교체. UI 보이스 선택·
    `change_voice` 흐름은 부모 로직 그대로 동작
 
@@ -88,7 +90,7 @@
 ```
 마이크(네이티브 16k) → receive(): 16k→24k 리샘플
   → OpenAI Realtime (ko 전사, 한국어 응답)
-  → output_queue(24k) → 기존 재생 경로 → 스피커
+  → output_queue(24k) → emit(): 24k→재생 장치 레이트(16k) 다운샘플 → 스피커
 ```
 
 도구 호출·인터럽트·응답 큐잉·유휴 정책은 부모 클래스 로직을 그대로 사용한다.
