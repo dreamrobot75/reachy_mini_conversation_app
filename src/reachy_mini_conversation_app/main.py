@@ -343,6 +343,27 @@ def run(
     def run_go_to_sleep_tool() -> dict[str, Any]:
         return app_lifecycle.run_go_to_sleep_tool(deps, logger)
 
+    sound_watcher = None
+    if config.REACHY_MINI_DOA_LOOK:
+        from reachy_mini_conversation_app.sound_direction import SpeakerGaze, SoundDirectionWatcher
+
+        def _doa_gaze_enabled() -> bool:
+            """Gaze only while awake; standby records direction without moving."""
+            active_handler = getattr(stream_manager, "handler", None) or handler
+            return not bool(getattr(active_handler, "in_standby", False))
+
+        doa_target = resolve_daemon_connection(config.REACHY_MINI_HOST, config.REACHY_MINI_PORT)
+        speaker_gaze = SpeakerGaze(movement_manager, robot, is_enabled=_doa_gaze_enabled)
+        sound_watcher = SoundDirectionWatcher(
+            doa_target.host or "localhost",
+            doa_target.port,
+            on_speech=speaker_gaze.on_speech,
+        )
+        sound_watcher.start()
+        if hasattr(handler, "sound_watcher"):
+            # Class attribute so UI-triggered handler rebuilds inherit the watcher.
+            type(handler).sound_watcher = sound_watcher
+
     if args.ui and settings_app is None and effective_settings_app is not None:
         import uvicorn
 
@@ -421,6 +442,9 @@ def run(
         ):
             logger.info("Sleep-on-exit: running go_to_sleep before shutdown...")
             run_go_to_sleep_tool()
+
+        if sound_watcher is not None:
+            sound_watcher.stop()
 
         if own_ui_server is not None:
             own_ui_server.should_exit = True

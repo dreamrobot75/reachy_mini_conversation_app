@@ -146,6 +146,8 @@ class OpenAIRealtimeHandler(HuggingFaceRealtimeHandler):
     _output_sample_rate: int | None = None
     _standby: bool = False
     _standby_loop: "asyncio.AbstractEventLoop | None" = None
+    # Sound-direction watcher, injected by main.py when DoA gaze is enabled.
+    sound_watcher: Any = None
 
     # --- standby (sleep-wait) state machine ---------------------------------
 
@@ -197,6 +199,7 @@ class OpenAIRealtimeHandler(HuggingFaceRealtimeHandler):
             await asyncio.to_thread(self._run_wake_up_motion)
         except Exception as e:
             logger.warning("Wake-up movement failed: %s", e)
+        await self._gaze_toward_wake_caller()
         await self._update_turn_detection(transcription_only=False)
         await self._send_wake_greeting()
 
@@ -205,6 +208,27 @@ class OpenAIRealtimeHandler(HuggingFaceRealtimeHandler):
         robot = self.deps.reachy_mini
         robot.enable_motors()
         robot.wake_up()
+
+    async def _gaze_toward_wake_caller(self) -> None:
+        """Look toward where the wake phrase came from, when DoA data is fresh."""
+        watcher = self.sound_watcher
+        if watcher is None:
+            return
+        try:
+            from reachy_mini_conversation_app.sound_direction import (
+                WAKE_GAZE_MAX_AGE_S,
+                queue_gaze,
+                doa_angle_to_head_yaw,
+            )
+
+            angle = watcher.recent_speech_angle(WAKE_GAZE_MAX_AGE_S)
+            if angle is None:
+                return
+            yaw = doa_angle_to_head_yaw(angle)
+            await asyncio.to_thread(queue_gaze, self.deps.movement_manager, self.deps.reachy_mini, yaw)
+            logger.info("Wake gaze toward DoA angle %.2f rad (head yaw %.2f rad)", angle, yaw)
+        except Exception as e:
+            logger.warning("Wake gaze failed: %s", e)
 
     async def _update_turn_detection(self, *, transcription_only: bool) -> None:
         """Switch server VAD between transcription-only and normal conversation."""

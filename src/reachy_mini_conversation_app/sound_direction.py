@@ -174,5 +174,6 @@ class SpeakerGaze:
         except Exception as e:
             logger.warning("Failed to queue sound-direction gaze: %s", e)
             return
+        logger.info("Speaker gaze: turning toward DoA %.2f rad (head yaw %.2f rad)", angle, yaw)
         self._last_yaw = yaw
         self._last_turn_time = now

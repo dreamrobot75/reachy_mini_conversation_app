@@ -151,6 +151,53 @@ def test_speaker_gaze_respects_disable_and_busy_and_tracking() -> None:
     movement_manager.queue_move.assert_not_called()
 
 
+# --- wake gaze ----------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_wake_from_standby_gazes_toward_recent_speech() -> None:
+    """Waking looks toward the direction the wake phrase came from."""
+    from unittest.mock import AsyncMock
+
+    from reachy_mini_conversation_app.openai_realtime import OpenAIRealtimeHandler
+    from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
+
+    deps = ToolDependencies(reachy_mini=MagicMock(), movement_manager=MagicMock())
+    deps.reachy_mini.get_current_joint_positions.return_value = ([0.0], [0.0, 0.0])
+    handler = OpenAIRealtimeHandler(deps)
+    handler._standby = True
+    handler._safe_response_create = AsyncMock()  # type: ignore[method-assign]
+    watcher = MagicMock()
+    watcher.recent_speech_angle.return_value = 0.4  # speaker on the left
+    handler.sound_watcher = watcher
+
+    await handler.wake_from_standby()
+
+    watcher.recent_speech_angle.assert_called_once_with(sd.WAKE_GAZE_MAX_AGE_S)
+    deps.movement_manager.queue_move.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_wake_from_standby_without_recent_speech_skips_gaze() -> None:
+    """No fresh speech direction means no gaze move on wake."""
+    from unittest.mock import AsyncMock
+
+    from reachy_mini_conversation_app.openai_realtime import OpenAIRealtimeHandler
+    from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
+
+    deps = ToolDependencies(reachy_mini=MagicMock(), movement_manager=MagicMock())
+    handler = OpenAIRealtimeHandler(deps)
+    handler._standby = True
+    handler._safe_response_create = AsyncMock()  # type: ignore[method-assign]
+    watcher = MagicMock()
+    watcher.recent_speech_angle.return_value = None
+    handler.sound_watcher = watcher
+
+    await handler.wake_from_standby()
+
+    deps.movement_manager.queue_move.assert_not_called()
+
+
 def test_speaker_gaze_threshold_and_cooldown() -> None:
     """Small angle changes and rapid re-triggers are ignored."""
     gaze, movement_manager, _ = _make_gaze()
