@@ -385,6 +385,7 @@ class Config:
     OPENAI_VOICE = (os.getenv("OPENAI_VOICE") or "").strip() or DEFAULT_OPENAI_VOICE
     REACHY_MINI_HOST = os.getenv(REACHY_MINI_HOST_ENV)
     REACHY_MINI_PORT = os.getenv(REACHY_MINI_PORT_ENV)
+    REACHY_MINI_AUTO_START_DAEMON = _env_flag("REACHY_MINI_AUTO_START_DAEMON", default=False)
 
     logger.debug(
         "HF mode: %s, HF session URL set: %s, HF direct URL set: %s",
@@ -503,6 +504,7 @@ def refresh_runtime_config_from_env() -> None:
     config.OPENAI_VOICE = (os.getenv("OPENAI_VOICE") or "").strip() or DEFAULT_OPENAI_VOICE
     config.REACHY_MINI_HOST = os.getenv(REACHY_MINI_HOST_ENV)
     config.REACHY_MINI_PORT = os.getenv(REACHY_MINI_PORT_ENV)
+    config.REACHY_MINI_AUTO_START_DAEMON = _env_flag("REACHY_MINI_AUTO_START_DAEMON", default=False)
     config.REACHY_MINI_CUSTOM_PROFILE = LOCKED_PROFILE or os.getenv("REACHY_MINI_CUSTOM_PROFILE")
 
 

@@ -152,6 +152,14 @@ def run(
             if daemon_connection.host is not None:
                 robot_kwargs["host"] = daemon_connection.host
             robot_kwargs["port"] = daemon_connection.port
+            if daemon_connection.connection_mode == "network" and daemon_connection.host is not None:
+                from reachy_mini_conversation_app.daemon_autostart import ensure_remote_daemon_running
+
+                ensure_remote_daemon_running(
+                    daemon_connection.host,
+                    daemon_connection.port,
+                    auto_start=config.REACHY_MINI_AUTO_START_DAEMON,
+                )
             logger.info(
                 "Connecting to Reachy Mini daemon (%s, %s:%d)",
                 daemon_connection.connection_mode or "auto",
