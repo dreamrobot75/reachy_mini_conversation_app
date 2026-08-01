@@ -334,7 +334,8 @@ def run(
         """
         active_handler = getattr(stream_manager, "handler", None) or handler
         if config.REACHY_MINI_STANDBY_ON_SLEEP and hasattr(active_handler, "request_standby"):
-            return active_handler.request_standby()
+            standby_result: dict[str, Any] = active_handler.request_standby()
+            return standby_result
         return go_to_sleep_and_stop_app()
 
     deps.go_to_sleep = go_to_sleep_action
