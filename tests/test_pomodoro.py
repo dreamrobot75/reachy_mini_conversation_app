@@ -6,15 +6,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import reachy_mini_conversation_app.tools.pomodoro as pomodoro_mod
+import reachy_mini_conversation_app.tools.pomodoro_timer as pomodoro_mod
 from reachy_mini_conversation_app.config import DEFAULT_PROFILES_DIRECTORY
-from reachy_mini_conversation_app.tools.pomodoro import (
+from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
+from reachy_mini_conversation_app.tools.pomodoro_timer import (
     MAX_MINUTES,
     DEFAULT_BREAK_MINUTES,
     DEFAULT_FOCUS_MINUTES,
     PomodoroTimer,
 )
-from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
 
 
 def _deps() -> ToolDependencies:
