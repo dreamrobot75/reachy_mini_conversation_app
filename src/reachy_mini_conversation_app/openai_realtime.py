@@ -22,6 +22,7 @@ from reachy_mini_conversation_app.config import OPENAI_REALTIME_URL, DEFAULT_OPE
 from reachy_mini_conversation_app.prompts import get_session_voice
 from reachy_mini_conversation_app.streaming import audio_to_int16
 from reachy_mini_conversation_app.tools.core_tools import ToolSpec
+from reachy_mini_conversation_app.conversation_handler import HandlerOutput
 from reachy_mini_conversation_app.huggingface_realtime import (
     HuggingFaceRealtimeHandler,
     _build_openai_compatible_client_from_realtime_url,
@@ -45,7 +46,13 @@ OPENAI_AVAILABLE_VOICES: list[str] = [
 ]
 
 # The OpenAI realtime endpoint only accepts 24 kHz PCM16.
-OPENAI_TARGET_SAMPLE_RATE = 24000
+OPENAI_TARGET_SAMPLE_RATE: int = 24000
+
+# Rate assumed when the media backend cannot report its output sample rate.
+FALLBACK_OUTPUT_SAMPLE_RATE: int = 16000
+
+# 3-tap binomial low-pass applied before downsampling to limit aliasing.
+_ANTI_ALIAS_KERNEL = np.array([0.25, 0.5, 0.25], dtype=np.float64)
 
 
 def _default_openai_voice() -> str:
@@ -65,13 +72,27 @@ def resample_pcm(
     source_rate: int,
     target_rate: int,
 ) -> NDArray[np.int16]:
-    """Linearly resample mono int16 PCM; adequate for 16 kHz mic -> 24 kHz speech."""
+    """Linearly resample mono int16 PCM between the mic/speaker and OpenAI's 24 kHz.
+
+    Used both ways: 16 kHz mic -> 24 kHz uplink, and 24 kHz model audio -> the
+    output device rate. Downsampling first runs a cheap 3-tap low-pass so the
+    content above the new Nyquist frequency does not alias; upsampling needs no
+    filter.
+
+    Known limitation: resampling happens per frame and each frame is
+    interpolated over its own endpoints, so frame boundaries are not
+    phase-continuous. The artifact is inaudible at speech frame sizes and
+    avoiding it would require carrying filter state across calls.
+    """
     if audio.size == 0 or source_rate == target_rate:
         return audio
+    audio_float = audio.astype(np.float64)
+    if target_rate < source_rate:
+        audio_float = np.convolve(audio_float, _ANTI_ALIAS_KERNEL, mode="same")
     target_length = max(1, round(audio.shape[0] * target_rate / source_rate))
     source_positions = np.arange(audio.shape[0], dtype=np.float64)
     target_positions = np.linspace(0.0, audio.shape[0] - 1, num=target_length)
-    resampled = np.interp(target_positions, source_positions, audio.astype(np.float64))
+    resampled = np.interp(target_positions, source_positions, audio_float)
     return np.round(resampled).astype(np.int16)
 
 
@@ -79,6 +100,52 @@ class OpenAIRealtimeHandler(HuggingFaceRealtimeHandler):
     """Realtime stream handler for the OpenAI Realtime API."""
 
     SAMPLE_RATE = OPENAI_TARGET_SAMPLE_RATE
+
+    _output_sample_rate: int | None = None
+
+    def _get_output_sample_rate(self) -> int:
+        """Return (and cache) the playback device rate, falling back to 16 kHz."""
+        cached = self._output_sample_rate
+        if cached is not None:
+            return cached
+
+        rate = FALLBACK_OUTPUT_SAMPLE_RATE
+        try:
+            reported = self.deps.reachy_mini.media.get_output_audio_samplerate()
+        except Exception as e:
+            logger.warning("Could not read the output sample rate (%s); assuming %d Hz", e, rate)
+        else:
+            if isinstance(reported, int) and not isinstance(reported, bool) and reported > 0:
+                rate = reported
+            else:
+                logger.warning("Ignoring invalid output sample rate %r; assuming %d Hz", reported, rate)
+
+        self._output_sample_rate = rate
+        logger.info("Playback sample rate: %d Hz (model audio is %d Hz)", rate, self.SAMPLE_RATE)
+        return rate
+
+    async def emit(self) -> HandlerOutput:
+        """Emit queued output, resampling model audio to the playback device rate.
+
+        The playback path downstream (`console.py` -> `push_audio_sample`) drops
+        the rate from the emitted tuple and feeds a fixed-rate sink, so 24 kHz
+        model audio would otherwise play back slowed down. Resample here, where
+        the rate is still known.
+        """
+        handler_output = await super().emit()
+        if not isinstance(handler_output, tuple):
+            return handler_output
+
+        source_rate, audio = handler_output
+        target_rate = self._get_output_sample_rate()
+        if source_rate == target_rate or audio.size == 0:
+            return handler_output
+
+        flat = np.asarray(audio).reshape(-1)
+        resampled = resample_pcm(flat, source_rate, target_rate)
+        if audio.ndim == 2:
+            resampled = resampled.reshape(1, -1)
+        return (target_rate, resampled)
 
     async def _build_realtime_client(self) -> AsyncOpenAI:
         """Build the OpenAI realtime client from OPENAI_API_KEY."""

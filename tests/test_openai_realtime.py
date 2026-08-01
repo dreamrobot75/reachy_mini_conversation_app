@@ -2,11 +2,12 @@
 
 import base64
 from typing import TYPE_CHECKING, Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np
 import pytest
 
+import reachy_mini_conversation_app.conversation_handler as conv_mod
 import reachy_mini_conversation_app.huggingface_realtime as hf_mod
 from reachy_mini_conversation_app.config import (
     HF_BACKEND,
@@ -15,6 +16,7 @@ from reachy_mini_conversation_app.config import (
     config,
     _normalize_conversation_backend,
 )
+from reachy_mini_conversation_app.streaming import AdditionalOutputs
 from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
 
 
@@ -60,6 +62,17 @@ def test_resample_pcm_16k_to_24k_length_and_dtype() -> None:
     # Monotone ramp stays monotone after linear interpolation.
     assert result[0] == source[0]
     assert int(result[-1]) >= int(source[-2])
+
+
+def test_resample_pcm_24k_to_16k_length_and_dtype() -> None:
+    """24 kHz model audio must downsample to 2/3 length, keeping int16 dtype."""
+    from reachy_mini_conversation_app.openai_realtime import resample_pcm
+
+    source = (np.sin(np.arange(2400) * 0.05) * 10000).astype(np.int16)
+    result = resample_pcm(source, 24000, 16000)
+
+    assert result.dtype == np.int16
+    assert result.shape[0] == 1600
 
 
 def test_resample_pcm_same_rate_is_passthrough() -> None:
@@ -209,6 +222,65 @@ async def test_receive_resamples_mic_frames_to_24k() -> None:
     assert len(appended) == 1
     decoded = np.frombuffer(base64.b64decode(appended[0]), dtype=np.int16)
     assert decoded.shape[0] == 2400
+
+
+@pytest.mark.asyncio
+async def test_emit_resamples_model_audio_to_output_device_rate(monkeypatch: Any) -> None:
+    """24 kHz model audio must reach the playback path at the device rate, not 1.5x slow."""
+    handler = _make_handler()
+    handler.deps.reachy_mini.media.get_output_audio_samplerate.return_value = 16000
+    pcm = (np.sin(np.arange(2400) * 0.05) * 10000).astype(np.int16).reshape(1, -1)
+    monkeypatch.setattr(conv_mod, "wait_for_item", AsyncMock(return_value=(24000, pcm)))
+
+    result = await handler.emit()
+
+    assert isinstance(result, tuple)
+    rate, audio = result
+    assert rate == 16000
+    assert audio.dtype == np.int16
+    assert audio.shape == (1, 1600)
+
+
+@pytest.mark.asyncio
+async def test_emit_passes_through_non_audio_output(monkeypatch: Any) -> None:
+    """Transcript payloads and empty emissions must pass through untouched."""
+    handler = _make_handler()
+    handler.deps.reachy_mini.media.get_output_audio_samplerate.return_value = 16000
+    outputs = AdditionalOutputs({"role": "assistant", "content": "hi"})
+    monkeypatch.setattr(conv_mod, "wait_for_item", AsyncMock(return_value=outputs))
+
+    assert await handler.emit() is outputs
+
+    monkeypatch.setattr(conv_mod, "wait_for_item", AsyncMock(return_value=None))
+    assert await handler.emit() is None
+
+
+@pytest.mark.asyncio
+async def test_emit_falls_back_to_16k_when_device_rate_unavailable(monkeypatch: Any) -> None:
+    """A media backend that cannot report its rate must not break playback."""
+    handler = _make_handler()
+    handler.deps.reachy_mini.media.get_output_audio_samplerate.side_effect = RuntimeError("no device")
+    pcm = np.zeros(2400, dtype=np.int16)
+    monkeypatch.setattr(conv_mod, "wait_for_item", AsyncMock(return_value=(24000, pcm)))
+
+    rate, audio = await handler.emit()
+
+    assert rate == 16000
+    assert audio.shape == (1600,)
+
+
+@pytest.mark.asyncio
+async def test_emit_keeps_audio_when_device_matches_model_rate(monkeypatch: Any) -> None:
+    """A 24 kHz-capable output device must receive the model audio unchanged."""
+    handler = _make_handler()
+    handler.deps.reachy_mini.media.get_output_audio_samplerate.return_value = 24000
+    pcm = np.arange(240, dtype=np.int16).reshape(1, -1)
+    monkeypatch.setattr(conv_mod, "wait_for_item", AsyncMock(return_value=(24000, pcm)))
+
+    rate, audio = await handler.emit()
+
+    assert rate == 24000
+    assert np.array_equal(audio, pcm)
 
 
 def test_desk_companion_ko_profile_exists_and_speaks_korean() -> None:
