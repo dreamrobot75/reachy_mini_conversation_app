@@ -389,6 +389,7 @@ class Config:
     REACHY_MINI_SLEEP_ON_EXIT = _env_flag("REACHY_MINI_SLEEP_ON_EXIT", default=True)
     REACHY_MINI_STANDBY_ON_SLEEP = _env_flag("REACHY_MINI_STANDBY_ON_SLEEP", default=True)
     REACHY_MINI_WAKE_PHRASES = os.getenv("REACHY_MINI_WAKE_PHRASES")
+    REACHY_MINI_DOA_LOOK = _env_flag("REACHY_MINI_DOA_LOOK", default=True)
 
     logger.debug(
         "HF mode: %s, HF session URL set: %s, HF direct URL set: %s",
@@ -511,6 +512,7 @@ def refresh_runtime_config_from_env() -> None:
     config.REACHY_MINI_SLEEP_ON_EXIT = _env_flag("REACHY_MINI_SLEEP_ON_EXIT", default=True)
     config.REACHY_MINI_STANDBY_ON_SLEEP = _env_flag("REACHY_MINI_STANDBY_ON_SLEEP", default=True)
     config.REACHY_MINI_WAKE_PHRASES = os.getenv("REACHY_MINI_WAKE_PHRASES")
+    config.REACHY_MINI_DOA_LOOK = _env_flag("REACHY_MINI_DOA_LOOK", default=True)
     config.REACHY_MINI_CUSTOM_PROFILE = LOCKED_PROFILE or os.getenv("REACHY_MINI_CUSTOM_PROFILE")
 
 
