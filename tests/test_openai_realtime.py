@@ -1,5 +1,6 @@
 """Tests for the OpenAI realtime backend (config + handler)."""
 
+import base64
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
 
@@ -129,19 +130,12 @@ async def test_build_realtime_client_requires_api_key(monkeypatch: Any) -> None:
         await handler._build_realtime_client()
 
 
-@pytest.mark.xfail(reason="voice override lands in Task 4", strict=False)
 def test_session_config_uses_24k_pcm_and_korean_language(monkeypatch: Any) -> None:
     """Session config must request 24 kHz PCM both ways and forward the transcription language."""
+    from reachy_mini_conversation_app import openai_realtime as oai_mod
+
     monkeypatch.setattr(hf_mod, "get_session_instructions", lambda _instance_path=None: "test")
-    # NOTE: the plan brief patches `oai_mod.get_session_voice`, which presumes Task 4's
-    # `get_current_voice` override (importing get_session_voice into openai_realtime.py
-    # and calling it there). Task 3 does not add that override yet, and importing
-    # get_session_voice into openai_realtime.py without using it would be an unused
-    # import under ruff. Until Task 4 lands, `_get_session_config` resolves the voice
-    # through the inherited `get_current_voice`, which reads `hf_mod.get_session_voice`
-    # (huggingface_realtime.py's own imported reference) -- so we patch it there instead.
-    # Task 4 must switch this back to patching `oai_mod.get_session_voice` per the brief.
-    monkeypatch.setattr(hf_mod, "get_session_voice", lambda default: default)
+    monkeypatch.setattr(oai_mod, "get_session_voice", lambda default: default)
     monkeypatch.setattr(config, "REALTIME_TRANSCRIPTION_LANGUAGE", "ko")
 
     handler = _make_handler()
@@ -151,3 +145,66 @@ def test_session_config_uses_24k_pcm_and_korean_language(monkeypatch: Any) -> No
     assert session["audio"]["output"]["format"] == {"type": "audio/pcm", "rate": 24000}
     assert session["audio"]["input"]["transcription"]["language"] == "ko"
     assert session["audio"]["output"]["voice"] == "marin"
+
+
+def test_voice_normalization_against_openai_catalog() -> None:
+    """Case-insensitive OpenAI voices resolve; HF voices fall back to marin."""
+    handler = _make_handler(startup_voice="CEDAR")
+    assert handler.get_current_voice() == "cedar"
+
+    handler_hf_voice = _make_handler(startup_voice="Aiden")
+    assert handler_hf_voice.get_current_voice() == "marin"
+
+
+@pytest.mark.asyncio
+async def test_get_available_voices_returns_openai_catalog() -> None:
+    """The UI voice list must be the OpenAI catalog, not the HF one."""
+    from reachy_mini_conversation_app.openai_realtime import OPENAI_AVAILABLE_VOICES
+
+    handler = _make_handler()
+    assert await handler.get_available_voices() == OPENAI_AVAILABLE_VOICES
+
+
+@pytest.mark.asyncio
+async def test_change_voice_updates_live_session(monkeypatch: Any) -> None:
+    """Changing voice should update the active session in place, like the HF handler."""
+    captured_update: dict[str, Any] = {}
+
+    class FakeSession:
+        async def update(self, **kwargs: Any) -> None:
+            captured_update.update(kwargs)
+
+    class FakeConnection:
+        session = FakeSession()
+
+    handler = _make_handler()
+    handler.connection = FakeConnection()
+
+    result = await handler.change_voice("cedar")
+
+    assert result == "Voice changed to cedar."
+    assert handler.get_current_voice() == "cedar"
+    assert captured_update["session"]["audio"]["output"]["voice"] == "cedar"
+
+
+@pytest.mark.asyncio
+async def test_receive_resamples_mic_frames_to_24k() -> None:
+    """16 kHz mic frames must arrive at the connection as 24 kHz PCM16."""
+    appended: list[str] = []
+
+    class FakeInputBuffer:
+        async def append(self, audio: str) -> None:
+            appended.append(audio)
+
+    class FakeConnection:
+        input_audio_buffer = FakeInputBuffer()
+
+    handler = _make_handler()
+    handler.connection = FakeConnection()
+
+    frame = (16000, np.arange(1600, dtype=np.int16))
+    await handler.receive(frame)
+
+    assert len(appended) == 1
+    decoded = np.frombuffer(base64.b64decode(appended[0]), dtype=np.int16)
+    assert decoded.shape[0] == 2400
