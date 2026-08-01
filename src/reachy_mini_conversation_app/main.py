@@ -3,6 +3,7 @@
 from __future__ import annotations
 import sys
 import time
+import signal
 import asyncio
 import logging
 import argparse
@@ -377,11 +378,29 @@ def run(
     if app_stop_event:
         threading.Thread(target=poll_stop_event, daemon=True).start()
 
+    # Route Windows Ctrl+Break / console close through the same path as Ctrl+C
+    # so sleep-on-exit also covers them.
+    if hasattr(signal, "SIGBREAK"):
+
+        def _raise_keyboard_interrupt(_signum: int, _frame: object) -> None:
+            raise KeyboardInterrupt
+
+        signal.signal(signal.SIGBREAK, _raise_keyboard_interrupt)
+
+    keyboard_interrupted = False
     try:
         stream_manager.launch()
     except KeyboardInterrupt:
+        keyboard_interrupted = True
         logger.info("Keyboard interruption in main thread... closing server.")
     finally:
+        # Direct console exits put the robot to sleep (opt-out via
+        # REACHY_MINI_SLEEP_ON_EXIT=0). External stops (dashboard/mobile)
+        # keep the original behavior: stop the app, leave the robot awake.
+        if keyboard_interrupted and config.REACHY_MINI_SLEEP_ON_EXIT and not go_to_sleep_requested.is_set():
+            logger.info("Sleep-on-exit: running go_to_sleep before shutdown...")
+            run_go_to_sleep_tool()
+
         if own_ui_server is not None:
             own_ui_server.should_exit = True
 
