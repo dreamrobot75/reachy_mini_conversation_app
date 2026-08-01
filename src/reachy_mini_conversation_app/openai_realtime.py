@@ -12,11 +12,7 @@ from typing import Tuple
 import numpy as np
 from openai import AsyncOpenAI
 from numpy.typing import NDArray
-from openai.types.realtime import (
-    RealtimeAudioConfigParam,
-    RealtimeAudioConfigOutputParam,
-    RealtimeSessionCreateRequestParam,
-)
+from openai.types.realtime import RealtimeSessionCreateRequestParam
 
 from reachy_mini_conversation_app.config import OPENAI_REALTIME_URL, DEFAULT_OPENAI_VOICE, config
 from reachy_mini_conversation_app.prompts import get_session_voice
@@ -205,25 +201,21 @@ class OpenAIRealtimeHandler(HuggingFaceRealtimeHandler):
         return self._resolve_backend_voice(voice, source="session voice", fallback=default_voice) or default_voice
 
     async def change_voice(self, voice: str) -> str:
-        """Change only the voice, updating the active session when possible."""
+        """Change the voice, reconnecting the session because OpenAI locks it after audio."""
         default_voice = _default_openai_voice()
         resolved_voice = (
             self._resolve_backend_voice(voice, source="requested voice", fallback=default_voice) or default_voice
         )
         self._voice_override = resolved_voice
         if self.connection is not None:
+            # OpenAI rejects session.update voice changes once a response has produced
+            # audio, and the startup greeting guarantees it has. Restart instead, the
+            # same way the parent handler recovers in apply_personality().
             try:
-                await self.connection.session.update(
-                    session=RealtimeSessionCreateRequestParam(
-                        type="realtime",
-                        audio=RealtimeAudioConfigParam(
-                            output=RealtimeAudioConfigOutputParam(voice=resolved_voice),
-                        ),
-                    ),
-                )
-                return f"Voice changed to {resolved_voice}."
+                await self._restart_session()
+                return f"Voice changed to {resolved_voice}; reconnecting session."
             except Exception as e:
-                logger.warning("Failed to update live session for voice change: %s", e)
+                logger.warning("Failed to restart session for voice change: %s", e)
                 return "Voice change failed. Will take effect on next connection."
         return "Voice changed. Will take effect on next connection."
 

@@ -180,25 +180,58 @@ async def test_get_available_voices_returns_openai_catalog() -> None:
 
 
 @pytest.mark.asyncio
-async def test_change_voice_updates_live_session(monkeypatch: Any) -> None:
-    """Changing voice should update the active session in place, like the HF handler."""
-    captured_update: dict[str, Any] = {}
-
-    class FakeSession:
-        async def update(self, **kwargs: Any) -> None:
-            captured_update.update(kwargs)
-
-    class FakeConnection:
-        session = FakeSession()
-
+async def test_change_voice_restarts_live_session(monkeypatch: Any) -> None:
+    """OpenAI locks the voice after audio output, so a live change must reconnect."""
     handler = _make_handler()
-    handler.connection = FakeConnection()
+    handler.connection = MagicMock()
+    restart = AsyncMock()
+    monkeypatch.setattr(handler, "_restart_session", restart)
 
     result = await handler.change_voice("cedar")
 
-    assert result == "Voice changed to cedar."
+    assert result == "Voice changed to cedar; reconnecting session."
     assert handler.get_current_voice() == "cedar"
-    assert captured_update["session"]["audio"]["output"]["voice"] == "cedar"
+    restart.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_change_voice_without_connection_defers(monkeypatch: Any) -> None:
+    """With no live session the voice is stored for the next connection."""
+    handler = _make_handler()
+    handler.connection = None
+
+    result = await handler.change_voice("Cedar")
+
+    assert result == "Voice changed. Will take effect on next connection."
+    assert handler.get_current_voice() == "cedar"
+
+
+@pytest.mark.asyncio
+async def test_localstream_voice_methods_follow_the_active_handler() -> None:
+    """The UI voice list/current voice must come from the OpenAI handler, not the HF config."""
+    from reachy_mini_conversation_app.console import LocalStream
+    from reachy_mini_conversation_app.openai_realtime import OPENAI_AVAILABLE_VOICES
+
+    handler = _make_handler(startup_voice="cedar")
+    stream = LocalStream(handler, MagicMock())
+
+    assert await stream.get_available_voices() == OPENAI_AVAILABLE_VOICES
+    assert stream.get_current_voice() == "cedar"
+
+
+@pytest.mark.asyncio
+async def test_localstream_voice_methods_fall_back_when_handler_fails() -> None:
+    """A handler that cannot answer must not break the voice UI."""
+    from reachy_mini_conversation_app.config import HF_AVAILABLE_VOICES
+    from reachy_mini_conversation_app.console import LocalStream
+
+    handler = MagicMock()
+    handler.get_available_voices = AsyncMock(side_effect=RuntimeError("backend down"))
+    handler.get_current_voice = MagicMock(side_effect=RuntimeError("backend down"))
+    stream = LocalStream(handler, MagicMock(), startup_voice="Aiden")
+
+    assert await stream.get_available_voices() == HF_AVAILABLE_VOICES
+    assert stream.get_current_voice() == "Aiden"
 
 
 @pytest.mark.asyncio

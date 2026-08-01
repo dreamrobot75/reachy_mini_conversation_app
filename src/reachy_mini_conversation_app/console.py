@@ -462,11 +462,22 @@ class LocalStream:
         return "Applied personality and restarting backend."
 
     async def get_available_voices(self) -> list[str]:
-        """Return the voices available for the Hugging Face backend."""
-        return get_available_voices()
+        """Return the voices available for the active backend handler."""
+        try:
+            return await self.handler.get_available_voices()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("Failed to read voices from the active handler: %s", exc)
+            return get_available_voices()
 
     def get_current_voice(self) -> str:
-        """Return the currently selected voice override or profile voice."""
+        """Return the voice currently selected by the active backend handler."""
+        try:
+            return self.handler.get_current_voice()
+        except Exception as exc:
+            logger.warning("Failed to read the current voice from the active handler: %s", exc)
+
         if self._voice_override:
             return self._voice_override
         try:
