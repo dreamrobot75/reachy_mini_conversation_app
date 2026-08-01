@@ -11,6 +11,7 @@ import reachy_mini_conversation_app.huggingface_realtime as hf_mod
 from reachy_mini_conversation_app.config import (
     HF_BACKEND,
     OPENAI_BACKEND,
+    DEFAULT_PROFILES_DIRECTORY,
     config,
     _normalize_conversation_backend,
 )
@@ -208,3 +209,14 @@ async def test_receive_resamples_mic_frames_to_24k() -> None:
     assert len(appended) == 1
     decoded = np.frombuffer(base64.b64decode(appended[0]), dtype=np.int16)
     assert decoded.shape[0] == 2400
+
+
+def test_desk_companion_ko_profile_exists_and_speaks_korean() -> None:
+    """The Korean desk companion profile must exist in the new profile.md format."""
+    profile_path = DEFAULT_PROFILES_DIRECTORY / "desk_companion_ko" / "profile.md"
+    assert profile_path.is_file()
+
+    content = profile_path.read_text(encoding="utf-8")
+    assert content.startswith("+++")
+    assert "schema_version = 1" in content
+    assert "한국어" in content
