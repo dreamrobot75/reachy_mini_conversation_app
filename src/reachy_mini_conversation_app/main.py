@@ -87,7 +87,9 @@ def run(
     # Putting these dependencies here makes the dashboard faster to load when the conversation app is installed
     from reachy_mini_conversation_app.moves import MovementManager
     from reachy_mini_conversation_app.config import (
+        OPENAI_BACKEND,
         HF_LOCAL_CONNECTION_MODE,
+        config,
         set_instance_path,
         get_hf_connection_selection,
         resolve_app_timeout_minutes,
@@ -165,7 +167,23 @@ def run(
     )
 
     def build_handler(startup_voice: Optional[str] = None) -> ConversationHandler:
-        """Build a Hugging Face realtime handler for the current runtime config."""
+        """Build the realtime conversation handler for the configured backend."""
+        if config.CONVERSATION_BACKEND == OPENAI_BACKEND:
+            from reachy_mini_conversation_app.openai_realtime import OpenAIRealtimeHandler
+
+            if not (config.OPENAI_API_KEY or "").strip():
+                logger.error(
+                    "CONVERSATION_BACKEND=openai requires OPENAI_API_KEY. "
+                    "Set it in the environment or .env and restart."
+                )
+                sys.exit(1)
+            logger.info("Using OpenAI realtime handler (model=%s)", config.OPENAI_REALTIME_MODEL)
+            return OpenAIRealtimeHandler(
+                deps,
+                instance_path=instance_path,
+                startup_voice=startup_voice,
+            )
+
         from reachy_mini_conversation_app.huggingface_realtime import HuggingFaceRealtimeHandler
 
         hf_connection_selection = get_hf_connection_selection()
