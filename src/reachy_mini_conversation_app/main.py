@@ -325,7 +325,19 @@ def run(
         finally:
             go_to_sleep_lock.release()
 
-    deps.go_to_sleep = go_to_sleep_and_stop_app
+    def go_to_sleep_action() -> dict[str, Any]:
+        """Route voice go_to_sleep to standby (wake-word wait) or the legacy app stop.
+
+        Standby keeps the app and realtime session alive so a wake phrase can
+        resume the conversation; only handlers that support it (OpenAI backend)
+        and REACHY_MINI_STANDBY_ON_SLEEP=1 take that path.
+        """
+        active_handler = getattr(stream_manager, "handler", None) or handler
+        if config.REACHY_MINI_STANDBY_ON_SLEEP and hasattr(active_handler, "request_standby"):
+            return active_handler.request_standby()
+        return go_to_sleep_and_stop_app()
+
+    deps.go_to_sleep = go_to_sleep_action
 
     def run_go_to_sleep_tool() -> dict[str, Any]:
         return app_lifecycle.run_go_to_sleep_tool(deps, logger)
@@ -397,7 +409,15 @@ def run(
         # Direct console exits put the robot to sleep (opt-out via
         # REACHY_MINI_SLEEP_ON_EXIT=0). External stops (dashboard/mobile)
         # keep the original behavior: stop the app, leave the robot awake.
-        if keyboard_interrupted and config.REACHY_MINI_SLEEP_ON_EXIT and not go_to_sleep_requested.is_set():
+        # In standby the robot is already in the sleep pose — nothing to do.
+        active_handler = getattr(stream_manager, "handler", None) or handler
+        handler_in_standby = bool(getattr(active_handler, "in_standby", False))
+        if (
+            keyboard_interrupted
+            and config.REACHY_MINI_SLEEP_ON_EXIT
+            and not go_to_sleep_requested.is_set()
+            and not handler_in_standby
+        ):
             logger.info("Sleep-on-exit: running go_to_sleep before shutdown...")
             run_go_to_sleep_tool()
 
