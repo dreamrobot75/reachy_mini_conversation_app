@@ -68,6 +68,13 @@ HF_LOCAL_CONNECTION_MODE = "local"
 HF_DEPLOYED_CONNECTION_MODE = "deployed"
 HF_REALTIME_SESSION_PROXY_URL = "https://pollen-robotics-reachy-mini-realtime-url.hf.space/session"
 
+# --- OpenAI realtime backend (Korean voice baseline) -------------------------
+CONVERSATION_BACKEND_ENV = "CONVERSATION_BACKEND"
+OPENAI_BACKEND = "openai"
+OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime"
+DEFAULT_OPENAI_REALTIME_MODEL = "gpt-realtime-mini"
+DEFAULT_OPENAI_VOICE = "marin"
+
 
 @dataclass(frozen=True)
 class HFBackendDefaults:
@@ -152,6 +159,23 @@ def _normalize_hf_connection_mode(value: str | None) -> str | None:
         )
         return None
     return candidate
+
+
+def _normalize_conversation_backend(value: str | None) -> str:
+    """Return the selected conversation backend: Hugging Face (default) or OpenAI."""
+    candidate = (value or "").strip().lower()
+    if not candidate:
+        return HF_BACKEND
+    if candidate in {"hf", HF_BACKEND}:
+        return HF_BACKEND
+    if candidate == OPENAI_BACKEND:
+        return OPENAI_BACKEND
+    logger.warning(
+        "Invalid %s=%r. Expected hf or openai; using hf.",
+        CONVERSATION_BACKEND_ENV,
+        value,
+    )
+    return HF_BACKEND
 
 
 def _normalize_transcription_language(value: str | None) -> str:
@@ -318,6 +342,10 @@ class Config:
     HF_REALTIME_WS_URL = os.getenv(HF_REALTIME_WS_URL_ENV)
     REALTIME_TRANSCRIPTION_LANGUAGE = _normalize_transcription_language(os.getenv(REALTIME_TRANSCRIPTION_LANGUAGE_ENV))
     HF_TOKEN = os.getenv("HF_TOKEN")  # Optional, falls back to hf auth login if not set
+    CONVERSATION_BACKEND = _normalize_conversation_backend(os.getenv(CONVERSATION_BACKEND_ENV))
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    OPENAI_REALTIME_MODEL = (os.getenv("OPENAI_REALTIME_MODEL") or "").strip() or DEFAULT_OPENAI_REALTIME_MODEL
+    OPENAI_VOICE = (os.getenv("OPENAI_VOICE") or "").strip() or DEFAULT_OPENAI_VOICE
 
     logger.debug(
         "HF mode: %s, HF session URL set: %s, HF direct URL set: %s",
@@ -430,6 +458,10 @@ def refresh_runtime_config_from_env() -> None:
         os.getenv(REALTIME_TRANSCRIPTION_LANGUAGE_ENV)
     )
     config.HF_TOKEN = os.getenv("HF_TOKEN")
+    config.CONVERSATION_BACKEND = _normalize_conversation_backend(os.getenv(CONVERSATION_BACKEND_ENV))
+    config.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    config.OPENAI_REALTIME_MODEL = (os.getenv("OPENAI_REALTIME_MODEL") or "").strip() or DEFAULT_OPENAI_REALTIME_MODEL
+    config.OPENAI_VOICE = (os.getenv("OPENAI_VOICE") or "").strip() or DEFAULT_OPENAI_VOICE
     config.REACHY_MINI_CUSTOM_PROFILE = LOCKED_PROFILE or os.getenv("REACHY_MINI_CUSTOM_PROFILE")
 
 
