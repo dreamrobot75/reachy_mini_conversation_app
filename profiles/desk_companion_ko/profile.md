@@ -16,6 +16,7 @@ default_tools = [
   "pollen_robotics_reachy_mini_weather_tool__get_weather",
   "pollen_robotics_reachy_mini_time_tool__get_time",
 ]
+greeting = "지금 한국어로 짧게 인사하며 대화를 시작해라. 한 문장으로, 매번 다른 표현으로 자연스럽게 말을 건네라."
 +++
 
 ## 정체성

@@ -122,10 +122,18 @@ def run(
         except Exception as e:
             logger.warning("Failed to load startup settings: %s", e)
 
-    logger.info(
-        "Configured Hugging Face realtime backend, connection mode: %s",
-        get_hf_connection_selection().mode,
-    )
+    if config.CONVERSATION_BACKEND == OPENAI_BACKEND:
+        logger.info("Configured OpenAI realtime backend, model: %s", config.OPENAI_REALTIME_MODEL)
+        if not (config.OPENAI_API_KEY or "").strip():
+            logger.error(
+                "CONVERSATION_BACKEND=openai requires OPENAI_API_KEY. Set it in the environment or .env and restart."
+            )
+            sys.exit(1)
+    else:
+        logger.info(
+            "Configured Hugging Face realtime backend, connection mode: %s",
+            get_hf_connection_selection().mode,
+        )
 
     from reachy_mini_conversation_app.console import LocalStream
     from reachy_mini_conversation_app.tools.core_tools import ToolDependencies, initialize_tools
@@ -169,14 +177,10 @@ def run(
     def build_handler(startup_voice: Optional[str] = None) -> ConversationHandler:
         """Build the realtime conversation handler for the configured backend."""
         if config.CONVERSATION_BACKEND == OPENAI_BACKEND:
+            # The API key is validated once in run(); a missing key here surfaces as
+            # the handler's own RuntimeError instead of killing a worker thread.
             from reachy_mini_conversation_app.openai_realtime import OpenAIRealtimeHandler
 
-            if not (config.OPENAI_API_KEY or "").strip():
-                logger.error(
-                    "CONVERSATION_BACKEND=openai requires OPENAI_API_KEY. "
-                    "Set it in the environment or .env and restart."
-                )
-                sys.exit(1)
             logger.info("Using OpenAI realtime handler (model=%s)", config.OPENAI_REALTIME_MODEL)
             return OpenAIRealtimeHandler(
                 deps,

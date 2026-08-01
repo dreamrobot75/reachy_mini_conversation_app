@@ -41,6 +41,9 @@ OPENAI_AVAILABLE_VOICES: list[str] = [
     "verse",
 ]
 
+# Lookup for case-insensitive voice normalization, shared by every resolver below.
+_VOICE_BY_LOWERCASE: dict[str, str] = {candidate.lower(): candidate for candidate in OPENAI_AVAILABLE_VOICES}
+
 # The OpenAI realtime endpoint only accepts 24 kHz PCM16.
 OPENAI_TARGET_SAMPLE_RATE: int = 24000
 
@@ -54,13 +57,17 @@ _ANTI_ALIAS_KERNEL = np.array([0.25, 0.5, 0.25], dtype=np.float64)
 def _default_openai_voice() -> str:
     """Return the configured default OpenAI voice, validated against the catalog."""
     configured = (getattr(config, "OPENAI_VOICE", None) or "").strip()
-    voice_by_lowercase = {candidate.lower(): candidate for candidate in OPENAI_AVAILABLE_VOICES}
-    normalized = voice_by_lowercase.get(configured.lower())
+    normalized = _VOICE_BY_LOWERCASE.get(configured.lower())
     if normalized is not None:
         return normalized
     if configured:
         logger.warning("Ignoring unsupported OPENAI_VOICE %r; using %s", configured, DEFAULT_OPENAI_VOICE)
     return DEFAULT_OPENAI_VOICE
+
+
+def _pcm_24k_format() -> dict[str, object]:
+    """Return a fresh 24 kHz PCM16 audio-format payload."""
+    return {"type": "audio/pcm", "rate": OPENAI_TARGET_SAMPLE_RATE}
 
 
 def resample_pcm(
@@ -160,9 +167,9 @@ class OpenAIRealtimeHandler(HuggingFaceRealtimeHandler):
     def _get_session_config(self, tool_specs: list[ToolSpec]) -> RealtimeSessionCreateRequestParam:
         """Return the inherited session config adjusted to OpenAI's 24 kHz PCM."""
         session = super()._get_session_config(tool_specs)
-        pcm_24k = {"type": "audio/pcm", "rate": OPENAI_TARGET_SAMPLE_RATE}
-        session["audio"]["input"]["format"] = pcm_24k  # type: ignore[typeddict-item]
-        session["audio"]["output"]["format"] = pcm_24k  # type: ignore[typeddict-item]
+        # Separate dicts: the SDK may mutate either format in place.
+        session["audio"]["input"]["format"] = _pcm_24k_format()  # type: ignore[typeddict-item]
+        session["audio"]["output"]["format"] = _pcm_24k_format()  # type: ignore[typeddict-item]
         return session
 
     async def get_available_voices(self) -> list[str]:
@@ -181,8 +188,7 @@ class OpenAIRealtimeHandler(HuggingFaceRealtimeHandler):
         if not voice_value:
             return fallback
 
-        voice_by_lowercase = {candidate.lower(): candidate for candidate in OPENAI_AVAILABLE_VOICES}
-        normalized_voice = voice_by_lowercase.get(voice_value.lower())
+        normalized_voice = _VOICE_BY_LOWERCASE.get(voice_value.lower())
         if normalized_voice is not None:
             return normalized_voice
 
@@ -228,7 +234,8 @@ class OpenAIRealtimeHandler(HuggingFaceRealtimeHandler):
         if audio_frame.size == 0:
             return
 
-        # Mono-ize using the same conventions as the parent handler.
+        # Mono-ize using the same conventions as the parent handler; copied from
+        # huggingface_realtime.py:965-971 — keep in sync when merging upstream.
         if audio_frame.ndim == 2:
             if audio_frame.shape[1] > audio_frame.shape[0]:
                 audio_frame = audio_frame.T

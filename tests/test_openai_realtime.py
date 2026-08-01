@@ -15,6 +15,7 @@ from reachy_mini_conversation_app.config import (
     DEFAULT_PROFILES_DIRECTORY,
     config,
     _normalize_conversation_backend,
+    refresh_runtime_config_from_env,
 )
 from reachy_mini_conversation_app.streaming import AdditionalOutputs
 from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
@@ -42,9 +43,21 @@ def test_normalize_conversation_backend(raw: str | None, expected: str) -> None:
     assert _normalize_conversation_backend(raw) == expected
 
 
+def test_conversation_backend_reads_the_environment(monkeypatch: Any) -> None:
+    """CONVERSATION_BACKEND=openai in the environment must reach the config singleton."""
+    original_backend = config.CONVERSATION_BACKEND
+    monkeypatch.setenv("CONVERSATION_BACKEND", "openai")
+    refresh_runtime_config_from_env()
+    try:
+        assert config.CONVERSATION_BACKEND == OPENAI_BACKEND
+    finally:
+        monkeypatch.delenv("CONVERSATION_BACKEND", raising=False)
+        refresh_runtime_config_from_env()
+    assert config.CONVERSATION_BACKEND == original_backend
+
+
 def test_config_exposes_openai_settings() -> None:
     """The config singleton must expose the OpenAI backend settings with safe defaults."""
-    assert config.CONVERSATION_BACKEND in {HF_BACKEND, OPENAI_BACKEND}
     assert hasattr(config, "OPENAI_API_KEY")
     assert config.OPENAI_REALTIME_MODEL  # non-empty default
     assert config.OPENAI_VOICE  # non-empty default
@@ -316,8 +329,35 @@ async def test_emit_keeps_audio_when_device_matches_model_rate(monkeypatch: Any)
     assert np.array_equal(audio, pcm)
 
 
+@pytest.mark.asyncio
+async def test_receive_monoizes_stereo_frames_before_upload() -> None:
+    """Channels-last stereo float frames must reach the server as mono 24 kHz PCM16."""
+    appended: list[str] = []
+
+    class FakeInputBuffer:
+        async def append(self, audio: str) -> None:
+            appended.append(audio)
+
+    class FakeConnection:
+        input_audio_buffer = FakeInputBuffer()
+
+    handler = _make_handler()
+    handler.connection = FakeConnection()
+
+    left = np.linspace(-0.5, 0.5, 1600, dtype=np.float32)
+    stereo = np.stack([left, np.zeros_like(left)], axis=1)  # (N, 2), channels-last
+    await handler.receive((16000, stereo))
+
+    assert len(appended) == 1
+    decoded = np.frombuffer(base64.b64decode(appended[0]), dtype=np.int16)
+    assert decoded.shape[0] == 2400  # mono, resampled 16k -> 24k
+    assert np.abs(decoded).max() > 0  # the left channel survived, not the silent one
+
+
 def test_desk_companion_ko_profile_exists_and_speaks_korean() -> None:
-    """The Korean desk companion profile must exist in the new profile.md format."""
+    """The Korean desk companion profile must exist and greet in Korean."""
+    from reachy_mini_conversation_app.profile_store import read_profile_from_directory
+
     profile_path = DEFAULT_PROFILES_DIRECTORY / "desk_companion_ko" / "profile.md"
     assert profile_path.is_file()
 
@@ -325,3 +365,7 @@ def test_desk_companion_ko_profile_exists_and_speaks_korean() -> None:
     assert content.startswith("+++")
     assert "schema_version = 1" in content
     assert "한국어" in content
+
+    profile = read_profile_from_directory("desk_companion_ko", profile_path.parent)
+    assert profile.greeting is not None
+    assert "한국어" in profile.greeting
