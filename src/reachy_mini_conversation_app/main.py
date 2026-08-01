@@ -152,13 +152,17 @@ def run(
             if daemon_connection.host is not None:
                 robot_kwargs["host"] = daemon_connection.host
             robot_kwargs["port"] = daemon_connection.port
+            daemon_freshly_started = False
             if daemon_connection.connection_mode == "network" and daemon_connection.host is not None:
                 from reachy_mini_conversation_app.daemon_autostart import ensure_remote_daemon_running
 
-                ensure_remote_daemon_running(
-                    daemon_connection.host,
-                    daemon_connection.port,
-                    auto_start=config.REACHY_MINI_AUTO_START_DAEMON,
+                daemon_freshly_started = (
+                    ensure_remote_daemon_running(
+                        daemon_connection.host,
+                        daemon_connection.port,
+                        auto_start=config.REACHY_MINI_AUTO_START_DAEMON,
+                    )
+                    == "started"
                 )
             logger.info(
                 "Connecting to Reachy Mini daemon (%s, %s:%d)",
@@ -166,7 +170,22 @@ def run(
                 daemon_connection.host or "localhost",
                 daemon_connection.port,
             )
-            robot = ReachyMini(**robot_kwargs)
+            # A freshly started daemon needs a few seconds to register its media
+            # producer; retry until the connection actually succeeds.
+            connect_attempts = 4 if daemon_freshly_started else 1
+            for attempt in range(1, connect_attempts + 1):
+                try:
+                    robot = ReachyMini(**robot_kwargs)
+                    break
+                except Exception:
+                    if attempt == connect_attempts:
+                        raise
+                    logger.info(
+                        "Daemon not fully ready yet (attempt %d/%d); retrying in 5 s...",
+                        attempt,
+                        connect_attempts,
+                    )
+                    time.sleep(5.0)
 
         except TimeoutError as e:
             logger.error(f"Connection timeout: Failed to connect to Reachy Mini daemon. Details: {e}")

@@ -40,8 +40,9 @@ def ensure_remote_daemon_running(
 ) -> str:
     """Start a stopped remote daemon backend when auto-start is enabled.
 
-    Returns the final state label: "running", "stopped", "timeout", "unknown",
-    or the daemon's own state string for anything else (e.g. "starting").
+    Returns the final state label: "running" (already up), "started" (we
+    started it just now), "stopped", "timeout", "unknown", or the daemon's own
+    state string for anything else (e.g. "starting").
     """
     state = get_daemon_state(host, port)
     if state is None:
@@ -79,7 +80,7 @@ def ensure_remote_daemon_running(
     while time.monotonic() < deadline:
         if get_daemon_state(host, port) == "running":
             logger.info("Remote daemon is running.")
-            return "running"
+            return "started"
         time.sleep(START_POLL_INTERVAL_S)
 
     logger.warning("Remote daemon did not reach running state within %.0f s.", start_timeout_s)

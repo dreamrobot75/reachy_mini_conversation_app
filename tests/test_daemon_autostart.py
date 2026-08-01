@@ -69,7 +69,7 @@ def test_stopped_daemon_with_optin_starts_and_waits(monkeypatch: Any) -> None:
 
     result = ensure_remote_daemon_running("10.0.0.1", 8000, auto_start=True)
 
-    assert result == "running"
+    assert result == "started"
     assert len(fake.post_calls) == 1
     assert fake.post_calls[0].endswith("/api/daemon/start")
 
