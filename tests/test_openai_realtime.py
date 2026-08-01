@@ -365,6 +365,9 @@ def test_desk_companion_ko_profile_exists_and_speaks_korean() -> None:
     assert content.startswith("+++")
     assert "schema_version = 1" in content
     assert "한국어" in content
+    # The shutdown rule must explicitly demand the go_to_sleep tool call —
+    # without it the model says goodbye verbally and never sleeps.
+    assert "go_to_sleep 도구를 호출" in content
 
     profile = read_profile_from_directory("desk_companion_ko", profile_path.parent)
     assert profile.greeting is not None
