@@ -60,7 +60,26 @@ HF_AVAILABLE_VOICES: list[str] = [
     "Vivian",
 ]
 
+# OpenAI Realtime voice catalog.
+OPENAI_AVAILABLE_VOICES: list[str] = [
+    "marin",
+    "cedar",
+    "alloy",
+    "ash",
+    "ballad",
+    "coral",
+    "echo",
+    "sage",
+    "shimmer",
+    "verse",
+]
+
 HF_BACKEND = "huggingface"
+OPENAI_BACKEND = "openai"
+CONVERSATION_BACKEND_ENV = "CONVERSATION_BACKEND"
+OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
+OPENAI_REALTIME_MODEL_ENV = "OPENAI_REALTIME_MODEL"
+OPENAI_VOICE_ENV = "OPENAI_VOICE"
 HF_REALTIME_CONNECTION_MODE_ENV = "HF_REALTIME_CONNECTION_MODE"
 HF_REALTIME_WS_URL_ENV = "HF_REALTIME_WS_URL"
 REALTIME_TRANSCRIPTION_LANGUAGE_ENV = "REALTIME_TRANSCRIPTION_LANGUAGE"
@@ -91,12 +110,20 @@ logger = logging.getLogger(__name__)
 _OBSOLETE_BACKEND_ENV_NAMES = ("BACKEND_PROVIDER", "MODEL_NAME")
 
 
+def _normalize_conversation_backend(value: str | None) -> str:
+    """Normalize the conversation backend identifier ('hf' or 'openai')."""
+    candidate = (value or "").strip().lower()
+    if candidate in {"openai", "oai"}:
+        return OPENAI_BACKEND
+    return "hf"
+
+
 def _warn_on_obsolete_backend_env() -> None:
-    """Warn when removed multi-backend selectors are still set; Hugging Face is the only backend."""
+    """Warn when removed multi-backend selectors are still set."""
     present = [name for name in _OBSOLETE_BACKEND_ENV_NAMES if (os.getenv(name) or "").strip()]
     if present:
         logger.warning(
-            "Ignoring obsolete backend environment variable(s): %s. This app now uses the Hugging Face backend only.",
+            "Ignoring obsolete backend environment variable(s): %s.",
             ", ".join(present),
         )
 
@@ -310,6 +337,11 @@ _warn_on_obsolete_backend_env()
 class Config:
     """Configuration class for the conversation app."""
 
+    CONVERSATION_BACKEND = _normalize_conversation_backend(os.getenv(CONVERSATION_BACKEND_ENV))
+    OPENAI_API_KEY = os.getenv(OPENAI_API_KEY_ENV)
+    OPENAI_REALTIME_MODEL = (os.getenv(OPENAI_REALTIME_MODEL_ENV) or "gpt-realtime-2.1").strip()
+    OPENAI_VOICE = (os.getenv(OPENAI_VOICE_ENV) or "marin").strip()
+
     HF_REALTIME_CONNECTION_MODE = (
         _normalize_hf_connection_mode(os.getenv(HF_REALTIME_CONNECTION_MODE_ENV)) or HF_DEFAULTS.connection_mode
     )
@@ -320,7 +352,8 @@ class Config:
     HF_TOKEN = os.getenv("HF_TOKEN")  # Optional, falls back to hf auth login if not set
 
     logger.debug(
-        "HF mode: %s, HF session URL set: %s, HF direct URL set: %s",
+        "Backend: %s, HF mode: %s, HF session URL set: %s, HF direct URL set: %s",
+        CONVERSATION_BACKEND,
         HF_REALTIME_CONNECTION_MODE,
         bool(HF_REALTIME_SESSION_URL and HF_REALTIME_SESSION_URL.strip()),
         bool(HF_REALTIME_WS_URL and HF_REALTIME_WS_URL.strip()),
@@ -417,9 +450,18 @@ class Config:
 config = Config()
 
 
+def get_conversation_backend() -> str:
+    """Return the configured conversation backend ('hf' or 'openai')."""
+    return getattr(config, "CONVERSATION_BACKEND", "hf")
+
+
 def refresh_runtime_config_from_env() -> None:
     """Refresh mutable runtime config fields from the current environment."""
     _warn_on_obsolete_backend_env()
+    config.CONVERSATION_BACKEND = _normalize_conversation_backend(os.getenv(CONVERSATION_BACKEND_ENV))
+    config.OPENAI_API_KEY = os.getenv(OPENAI_API_KEY_ENV)
+    config.OPENAI_REALTIME_MODEL = (os.getenv(OPENAI_REALTIME_MODEL_ENV) or "gpt-realtime-2.1").strip()
+    config.OPENAI_VOICE = (os.getenv(OPENAI_VOICE_ENV) or "marin").strip()
     config.HF_REALTIME_CONNECTION_MODE = (
         _normalize_hf_connection_mode(os.getenv(HF_REALTIME_CONNECTION_MODE_ENV)) or HF_DEFAULTS.connection_mode
     )
@@ -434,12 +476,16 @@ def refresh_runtime_config_from_env() -> None:
 
 
 def get_available_voices() -> list[str]:
-    """Return the curated Hugging Face voice list."""
+    """Return the curated voice list for the active backend."""
+    if get_conversation_backend() == OPENAI_BACKEND:
+        return list(OPENAI_AVAILABLE_VOICES)
     return list(HF_AVAILABLE_VOICES)
 
 
 def get_default_voice() -> str:
-    """Return the default Hugging Face voice."""
+    """Return the default voice for the active backend."""
+    if get_conversation_backend() == OPENAI_BACKEND:
+        return config.OPENAI_VOICE or "marin"
     return HF_DEFAULTS.voice
 
 

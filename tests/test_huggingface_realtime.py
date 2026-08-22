@@ -270,12 +270,42 @@ async def test_run_realtime_session_uses_default_voice_for_lb_allocated_sessions
 
 def test_huggingface_session_uses_configured_transcription_language(monkeypatch: Any) -> None:
     """Hugging Face realtime sessions should forward the configured transcription language."""
+    monkeypatch.setattr(config, "CONVERSATION_BACKEND", "hf")
     monkeypatch.setattr(config, "REALTIME_TRANSCRIPTION_LANGUAGE", "zh")
     handler = HuggingFaceRealtimeHandler(ToolDependencies(reachy_mini=MagicMock(), movement_manager=MagicMock()))
 
     session = handler._get_session_config([])
 
     assert session["audio"]["input"]["transcription"]["language"] == "zh"
+
+
+def test_openai_session_uses_24k_audio_and_transcription_language(monkeypatch: Any) -> None:
+    """OpenAI realtime sessions should configure 24kHz PCM and configured transcription language."""
+    monkeypatch.setattr(config, "CONVERSATION_BACKEND", "openai")
+    monkeypatch.setattr(config, "REALTIME_TRANSCRIPTION_LANGUAGE", "ko")
+    monkeypatch.setattr(config, "OPENAI_VOICE", "marin")
+    handler = HuggingFaceRealtimeHandler(ToolDependencies(reachy_mini=MagicMock(), movement_manager=MagicMock()))
+
+    session = handler._get_session_config([])
+
+    assert session["audio"]["input"]["format"]["rate"] == 24000
+    assert session["audio"]["output"]["format"]["rate"] == 24000
+    assert session["audio"]["input"]["transcription"]["language"] == "ko"
+    assert session["audio"]["output"]["voice"] == "marin"
+
+
+@pytest.mark.asyncio
+async def test_build_realtime_client_openai(monkeypatch: Any) -> None:
+    """OpenAI backend builds AsyncOpenAI client with API key and sets model query."""
+    monkeypatch.setattr(config, "CONVERSATION_BACKEND", "openai")
+    monkeypatch.setattr(config, "OPENAI_API_KEY", "test-key-123")
+    monkeypatch.setattr(config, "OPENAI_REALTIME_MODEL", "gpt-realtime-2.1")
+    handler = HuggingFaceRealtimeHandler(ToolDependencies(reachy_mini=MagicMock(), movement_manager=MagicMock()))
+
+    client = await handler._build_realtime_client()
+
+    assert handler._realtime_connect_query == {"model": "gpt-realtime-2.1"}
+    assert client.api_key == "test-key-123"
 
 
 @pytest.mark.asyncio

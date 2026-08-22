@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Final, Tuple, Optional
 
 import httpx
 import numpy as np
+import scipy.signal
 from openai import AsyncOpenAI
 from pydantic import Field, BaseModel
 from numpy.typing import NDArray
@@ -28,6 +29,7 @@ from openai.types.realtime.realtime_audio_input_turn_detection_param import Serv
 
 from reachy_mini_conversation_app.tools import core_tools
 from reachy_mini_conversation_app.config import (
+    OPENAI_BACKEND,
     HF_LOCAL_CONNECTION_MODE,
     config,
     get_default_voice,
@@ -35,6 +37,7 @@ from reachy_mini_conversation_app.config import (
     get_available_voices,
     get_hf_direct_ws_url,
     parse_hf_realtime_url,
+    get_conversation_backend,
     get_hf_connection_selection,
 )
 from reachy_mini_conversation_app.prompts import (
@@ -220,7 +223,29 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
         return fallback
 
     def _get_session_config(self, tool_specs: list[ToolSpec]) -> RealtimeSessionCreateRequestParam:
-        """Return the Hugging Face OpenAI-compatible session config."""
+        """Return the OpenAI-compatible session config."""
+        if get_conversation_backend() == OPENAI_BACKEND:
+            return RealtimeSessionCreateRequestParam(
+                type="realtime",
+                instructions=get_session_instructions(self.instance_path),
+                audio=RealtimeAudioConfigParam(
+                    input=RealtimeAudioConfigInputParam(
+                        format={"type": "audio/pcm", "rate": 24000},
+                        transcription=AudioTranscriptionParam(
+                            model="whisper-1",
+                            language=config.REALTIME_TRANSCRIPTION_LANGUAGE,
+                        ),
+                        turn_detection=ServerVad(type="server_vad", interrupt_response=True),
+                    ),
+                    output=RealtimeAudioConfigOutputParam(
+                        format={"type": "audio/pcm", "rate": 24000},
+                        voice=self.get_current_voice(),
+                    ),
+                ),
+                tools=to_realtime_tools_config(tool_specs),
+                tool_choice="auto",
+            )
+
         return RealtimeSessionCreateRequestParam(
             type="realtime",
             instructions=get_session_instructions(self.instance_path),
@@ -840,16 +865,24 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
                     # Handle audio delta
                     if event.type == "response.output_audio.delta":
                         decoded_pcm_bytes = base64.b64decode(event.delta)
-                        decoded_pcm = np.frombuffer(decoded_pcm_bytes, dtype=np.int16).reshape(1, -1)
+                        decoded_pcm = np.frombuffer(decoded_pcm_bytes, dtype=np.int16)
                         self._mark_activity("assistant_audio_delta")
                         if self._turn_user_done_at is not None and self._turn_first_audio_at is None:
                             self._turn_first_audio_at = time.perf_counter()
                             delta_ms = (self._turn_first_audio_at - self._turn_user_done_at) * 1000
                             logger.info("Turn latency: first audio delta %.0f ms after user transcript", delta_ms)
+
+                        if get_conversation_backend() == OPENAI_BACKEND:
+                            # OpenAI Realtime sends 24 kHz audio. Resample 24 kHz -> 16 kHz.
+                            decoded_pcm_16k = scipy.signal.resample_poly(decoded_pcm, 2, 3).astype(np.int16)
+                            reshaped_pcm = decoded_pcm_16k.reshape(1, -1)
+                        else:
+                            reshaped_pcm = decoded_pcm.reshape(1, -1)
+
                         await self.output_queue.put(
                             (
                                 self.SAMPLE_RATE,
-                                decoded_pcm,
+                                reshaped_pcm,
                             ),
                         )
                     # ---- tool-calling plumbing ----
@@ -973,9 +1006,16 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
         # Cast if needed
         audio_frame = audio_to_int16(audio_frame)
 
+        if get_conversation_backend() == OPENAI_BACKEND:
+            # OpenAI Realtime expects 24 kHz audio. Resample 16 kHz -> 24 kHz.
+            audio_frame_24k = scipy.signal.resample_poly(audio_frame, 3, 2).astype(np.int16)
+            audio_bytes = audio_frame_24k.tobytes()
+        else:
+            audio_bytes = audio_frame.tobytes()
+
         # Send to the realtime input buffer (guard against races during reconnect).
         try:
-            audio_message = base64.b64encode(audio_frame.tobytes()).decode("utf-8")
+            audio_message = base64.b64encode(audio_bytes).decode("utf-8")
             await self.connection.input_audio_buffer.append(audio=audio_message)
         except Exception as e:
             logger.debug("Dropping audio frame: connection not ready (%s)", e)
@@ -1013,7 +1053,16 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
         return get_available_voices()
 
     async def _build_realtime_client(self) -> AsyncOpenAI:
-        """Build the Hugging Face OpenAI-compatible realtime client."""
+        """Build the OpenAI or Hugging Face realtime client."""
+        if get_conversation_backend() == OPENAI_BACKEND:
+            api_key = (config.OPENAI_API_KEY or "").strip()
+            if not api_key:
+                raise RuntimeError("OPENAI_API_KEY must be set when CONVERSATION_BACKEND=openai")
+            model = getattr(config, "OPENAI_REALTIME_MODEL", "gpt-realtime-2.1") or "gpt-realtime-2.1"
+            self._realtime_connect_query = {"model": model}
+            logger.info("Using OpenAI Realtime API backend (model=%s)", model)
+            return AsyncOpenAI(api_key=api_key)
+
         configured_bearer_token = (config.HF_TOKEN or "").strip()
         connection_selection = get_hf_connection_selection()
         direct_realtime_url = get_hf_direct_ws_url()
