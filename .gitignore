@@ -71,3 +71,4 @@ external_content/external_tools/*
 external_content/user_personalities/
 external_content/installed_tool_spaces.json
 external_content/profile_toolsets.json
+reachymini_console.bat
