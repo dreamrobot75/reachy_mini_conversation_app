@@ -87,8 +87,11 @@ def run(
     # Putting these dependencies here makes the dashboard faster to load when the conversation app is installed
     from reachy_mini_conversation_app.moves import MovementManager
     from reachy_mini_conversation_app.config import (
+        OPENAI_BACKEND,
         HF_LOCAL_CONNECTION_MODE,
+        config,
         set_instance_path,
+        get_conversation_backend,
         get_hf_connection_selection,
         resolve_app_timeout_minutes,
         refresh_runtime_config_from_env,
@@ -120,10 +123,17 @@ def run(
         except Exception as e:
             logger.warning("Failed to load startup settings: %s", e)
 
-    logger.info(
-        "Configured Hugging Face realtime backend, connection mode: %s",
-        get_hf_connection_selection().mode,
-    )
+    if get_conversation_backend() == OPENAI_BACKEND:
+        logger.info(
+            "Configured OpenAI realtime backend (model=%s, voice=%s)",
+            config.OPENAI_REALTIME_MODEL,
+            config.OPENAI_VOICE,
+        )
+    else:
+        logger.info(
+            "Configured Hugging Face realtime backend, connection mode: %s",
+            get_hf_connection_selection().mode,
+        )
 
     from reachy_mini_conversation_app.console import LocalStream
     from reachy_mini_conversation_app.tools.core_tools import ToolDependencies, initialize_tools
@@ -165,16 +175,19 @@ def run(
     )
 
     def build_handler(startup_voice: Optional[str] = None) -> ConversationHandler:
-        """Build a Hugging Face realtime handler for the current runtime config."""
+        """Build a realtime handler for the current runtime config."""
         from reachy_mini_conversation_app.huggingface_realtime import HuggingFaceRealtimeHandler
 
-        hf_connection_selection = get_hf_connection_selection()
-        transport_label = (
-            "Hugging Face direct websocket"
-            if hf_connection_selection.mode == HF_LOCAL_CONNECTION_MODE and hf_connection_selection.has_target
-            else "Hugging Face session proxy"
-        )
-        logger.info("Using Hugging Face realtime handler (%s)", transport_label)
+        if get_conversation_backend() == OPENAI_BACKEND:
+            logger.info("Using OpenAI Realtime handler")
+        else:
+            hf_connection_selection = get_hf_connection_selection()
+            transport_label = (
+                "Hugging Face direct websocket"
+                if hf_connection_selection.mode == HF_LOCAL_CONNECTION_MODE and hf_connection_selection.has_target
+                else "Hugging Face session proxy"
+            )
+            logger.info("Using Hugging Face realtime handler (%s)", transport_label)
         return HuggingFaceRealtimeHandler(
             deps,
             instance_path=instance_path,
