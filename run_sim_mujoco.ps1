@@ -9,6 +9,13 @@ Write-Host "  Reachy Mini - MuJoCo 3D Simulation & Web UI Launcher" -ForegroundC
 Write-Host "======================================================================" -ForegroundColor Cyan
 Write-Host ""
 
+Write-Host "[0/3] Cleaning up previous zombie processes on ports 8000 & 7860..." -ForegroundColor Gray
+Get-Process -Name reachy-mini-daemon -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-NetTCPConnection -LocalPort 8000, 7860 -ErrorAction SilentlyContinue | ForEach-Object {
+    Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue
+}
+Start-Sleep -Seconds 1
+
 Write-Host "[1/3] Launching MuJoCo 3D Simulation Daemon in a new window..." -ForegroundColor Green
 Start-Process "uv" -ArgumentList "run reachy-mini-daemon --sim"
 
