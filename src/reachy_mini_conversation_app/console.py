@@ -622,6 +622,65 @@ class LocalStream:
 
             return StreamingResponse(_stream_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
+        vision_state: dict[str, Any] = {
+            "face_detection_enabled": True,
+            "auto_gaze_enabled": True,
+            "min_face_confidence": 0.5,
+            "yolo_detection_enabled": True,
+        }
+
+        @settings_app.get("/api/vision/settings")
+        def _get_vision_settings() -> dict[str, Any]:
+            """Return current vision & face recognition settings."""
+            return {
+                **vision_state,
+                "active_camera": camera_service.get_active_device_id(),
+                "available_cameras": camera_service.list_devices(),
+            }
+
+        @settings_app.post("/api/vision/settings")
+        def _save_vision_settings(payload: dict[str, Any]) -> dict[str, Any]:
+            """Update vision & face recognition settings."""
+            if "face_detection_enabled" in payload:
+                vision_state["face_detection_enabled"] = bool(payload["face_detection_enabled"])
+            if "auto_gaze_enabled" in payload:
+                vision_state["auto_gaze_enabled"] = bool(payload["auto_gaze_enabled"])
+            if "min_face_confidence" in payload:
+                vision_state["min_face_confidence"] = float(payload["min_face_confidence"])
+            if "yolo_detection_enabled" in payload:
+                vision_state["yolo_detection_enabled"] = bool(payload["yolo_detection_enabled"])
+            if "active_camera" in payload:
+                camera_service.select_device(str(payload["active_camera"]))
+            return {"ok": True, "settings": _get_vision_settings()}
+
+        @settings_app.post("/api/vision/test-face")
+        def _test_face_detection() -> dict[str, Any]:
+            """Test real-time 3D face recognition on the active camera frame."""
+            frame = camera_service.get_frame_bgr()
+            if frame is None:
+                return {"detected": False, "message": "카메라 영상을 가져올 수 없습니다."}
+            try:
+                from reachy_mini_conversation_app.vision.face_detector_3d import Face3DDetector
+
+                detector = Face3DDetector()
+                faces = detector.detect(frame)
+                if not faces:
+                    return {"detected": False, "message": "카메라 시야에서 얼굴이 감지되지 않았습니다."}
+                face = faces[0]
+                return {
+                    "detected": True,
+                    "distance": round(face.distance, 2),
+                    "coordinates_3d": {
+                        "x": round(face.x, 3),
+                        "y": round(face.y, 3),
+                        "z": round(face.z, 3),
+                    },
+                    "message": f"얼굴 인식 성공! (전방 거리: {face.x:.2f}m, 좌우: {face.y:+.2f}m, 높이: {face.z:+.2f}m)",
+                }
+            except Exception as e:
+                logger.error("Face test failed: %s", e)
+                return {"detected": False, "error": str(e), "message": f"얼굴 인식 테스트 오류: {e}"}
+
         # ── JSON-RPC control surface (/rpc) ──────────────────────────────
         # The single wire format both the local browser UI and remote WebRTC
         # clients use (the daemon relays it over the DataChannel). Notifications
