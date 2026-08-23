@@ -34,10 +34,32 @@ class GoogleCalendarService:
         return cls._instance
 
     def is_authenticated(self) -> bool:
-        """Check if valid Google Calendar OAuth credentials or token exist."""
-        if TOKEN_PATH.exists():
-            return True
-        return any(p.exists() for p in CREDENTIALS_PATHS)
+        """Check if valid Google Calendar OAuth token exists."""
+        return TOKEN_PATH.exists()
+
+    def has_credentials(self) -> bool:
+        """Check if client credentials JSON exists."""
+        return self._get_credentials_path() is not None
+
+    def save_client_credentials(self, client_id: str, client_secret: str) -> None:
+        """Save Client ID and Client Secret into credentials.json."""
+        import json
+
+        data = {
+            "installed": {
+                "client_id": client_id,
+                "project_id": "reachy-mini-app",
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                "client_secret": client_secret,
+                "redirect_uris": [
+                    "http://localhost",
+                    "http://localhost:7860/api/calendar/oauth2callback",
+                ],
+            }
+        }
+        Path("credentials.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def _get_credentials_path(self) -> Optional[Path]:
         """Find existing credentials file."""
@@ -45,6 +67,51 @@ class GoogleCalendarService:
             if p.exists():
                 return p
         return None
+
+    def get_auth_url(
+        self, redirect_uri: str = "http://localhost:7860/api/calendar/oauth2callback"
+    ) -> tuple[Optional[str], Optional[str]]:
+        """Generate OAuth 2.0 authorization URL for browser flow."""
+        cred_file = self._get_credentials_path()
+        if cred_file is None:
+            return None, "credentials.json 파일이 필요합니다. Client ID와 Secret을 먼저 입력해 주세요."
+        try:
+            import importlib
+
+            flow_mod = importlib.import_module("google_auth_oauthlib.flow")
+            installed_flow_cls = getattr(flow_mod, "InstalledAppFlow")
+            flow = installed_flow_cls.from_client_secrets_file(str(cred_file), SCOPES, redirect_uri=redirect_uri)
+            auth_url, _ = flow.authorization_url(
+                access_type="offline",
+                include_granted_scopes="true",
+                prompt="consent",
+            )
+            return str(auth_url), None
+        except Exception as e:
+            logger.error("Failed generating OAuth URL: %s", e)
+            return None, str(e)
+
+    def exchange_code(
+        self, code: str, redirect_uri: str = "http://localhost:7860/api/calendar/oauth2callback"
+    ) -> bool:
+        """Exchange authorization code for token and persist."""
+        cred_file = self._get_credentials_path()
+        if cred_file is None:
+            return False
+        try:
+            import importlib
+
+            flow_mod = importlib.import_module("google_auth_oauthlib.flow")
+            installed_flow_cls = getattr(flow_mod, "InstalledAppFlow")
+            flow = installed_flow_cls.from_client_secrets_file(str(cred_file), SCOPES, redirect_uri=redirect_uri)
+            flow.fetch_token(code=code)
+            creds = flow.credentials
+            TOKEN_PATH.write_text(creds.to_json(), encoding="utf-8")
+            logger.info("Successfully saved Google OAuth token to %s", TOKEN_PATH)
+            return True
+        except Exception as e:
+            logger.error("Failed exchanging authorization code: %s", e)
+            return False
 
     def get_credentials(self) -> Any:
         """Load or refresh OAuth 2.0 credentials."""

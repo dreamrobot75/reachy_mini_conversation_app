@@ -54,13 +54,16 @@ from reachy_mini_conversation_app.conversation_handler import ConversationHandle
 
 try:
     # FastAPI is provided by the Reachy Mini Apps runtime
-    from fastapi import FastAPI, Response
+    from fastapi import FastAPI, Request, Response
     from pydantic import BaseModel
-    from fastapi.responses import FileResponse, StreamingResponse
+    from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
     from starlette.staticfiles import StaticFiles
 except Exception:  # pragma: no cover - only loaded when settings_app is used
     FastAPI = object  # type: ignore
+    Request = object  # type: ignore
+    Response = object  # type: ignore
     FileResponse = object  # type: ignore
+    HTMLResponse = object  # type: ignore
     StreamingResponse = object  # type: ignore
     StaticFiles = object  # type: ignore
     BaseModel = object  # type: ignore
@@ -688,7 +691,77 @@ class LocalStream:
             """Return Google Calendar OAuth connection status."""
             return {
                 "authenticated": calendar_service.is_authenticated(),
+                "has_credentials": calendar_service.has_credentials(),
             }
+
+        @settings_app.post("/api/calendar/save-credentials")
+        def _save_calendar_credentials(payload: dict[str, Any]) -> dict[str, Any]:
+            """Save client ID and client secret directly from Settings UI."""
+            client_id = str(payload.get("client_id", "")).strip()
+            client_secret = str(payload.get("client_secret", "")).strip()
+            if not client_id or not client_secret:
+                return {"ok": False, "error": "Client ID와 Client Secret을 모두 입력해 주세요."}
+            calendar_service.save_client_credentials(client_id, client_secret)
+            return {"ok": True}
+
+        @settings_app.get("/api/calendar/auth-url")
+        def _get_calendar_auth_url(request: Request) -> dict[str, Any]:
+            """Generate OAuth 2.0 authorization URL to open in browser."""
+            redirect_uri = f"{request.base_url}api/calendar/oauth2callback"
+            url, err = calendar_service.get_auth_url(redirect_uri=redirect_uri)
+            return {"auth_url": url, "error": err}
+
+        @settings_app.get("/api/calendar/oauth2callback")
+        def _calendar_oauth_callback(
+            request: Request,
+            code: Optional[str] = None,
+            error: Optional[str] = None,
+        ) -> HTMLResponse:
+            """Handle OAuth redirect callback from Google."""
+            if error or not code:
+                return HTMLResponse(
+                    f"<html><body style='background:#09090b;color:#f87171;font-family:sans-serif;text-align:center;padding-top:50px;'>"
+                    f"<h2>❌ Google 인증 실패</h2><p>{error or '인증 코드가 전달되지 않았습니다.'}</p>"
+                    f"<button onclick='window.close()' style='padding:8px 16px;cursor:pointer;'>창 닫기</button></body></html>"
+                )
+            redirect_uri = f"{request.base_url}api/calendar/oauth2callback"
+            success = calendar_service.exchange_code(code, redirect_uri=redirect_uri)
+            if success:
+                return HTMLResponse(
+                    """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Google Calendar 연동 완료</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #09090b; color: #f4f4f5; display: grid; place-items: center; height: 100vh; margin: 0; }
+    .card { text-align: center; padding: 36px 40px; background: #18181b; border-radius: 16px; border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 12px 32px rgba(0,0,0,0.5); max-width: 420px; }
+    h2 { color: #4ade80; margin: 0 0 12px 0; font-size: 1.4rem; }
+    p { color: #a1a1aa; font-size: 0.95rem; line-height: 1.5; margin-bottom: 24px; }
+    button { background: #6366f1; color: #ffffff; border: none; padding: 10px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; }
+    button:hover { background: #4f46e5; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>✅ Google Calendar 연동 완료!</h2>
+    <p>Reachy Mini와 Google 계정이 성공적으로 연결되었습니다.<br>이 창을 닫고 설정 화면으로 돌아가세요.</p>
+    <button onclick="window.close()">창 닫기</button>
+  </div>
+  <script>
+    if (window.opener) {
+      window.opener.postMessage({ type: "GOOGLE_OAUTH_SUCCESS" }, "*");
+    }
+    setTimeout(() => window.close(), 2500);
+  </script>
+</body>
+</html>"""
+                )
+            return HTMLResponse(
+                "<html><body style='background:#09090b;color:#f87171;font-family:sans-serif;text-align:center;padding-top:50px;'>"
+                "<h2>❌ 토큰 발급 실패</h2><p>OAuth 토큰을 교환하지 못했습니다. credentials.json 설정을 확인해 주세요.</p>"
+                "<button onclick='window.close()' style='padding:8px 16px;cursor:pointer;'>창 닫기</button></body></html>"
+            )
 
         @settings_app.get("/api/calendar/events")
         def _get_calendar_events() -> dict[str, Any]:

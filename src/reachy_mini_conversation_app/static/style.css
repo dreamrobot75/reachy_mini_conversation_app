@@ -1941,3 +1941,11 @@ button {
 .settings-calendar-event-item:last-child {
   border-bottom: none;
 }
+
+.settings-creds-card {
+  padding: 14px 16px;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--bg-soft, rgba(255, 255, 255, 0.04));
+  border: 1px dashed rgba(99, 102, 241, 0.4);
+  margin: 10px 0 14px 0;
+}
