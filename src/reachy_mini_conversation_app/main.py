@@ -104,6 +104,9 @@ def run(
 
     logger = setup_logger(args.debug)
     logger.info("Starting Reachy Mini Conversation App")
+    if getattr(args, "profile", None):
+        config.REACHY_MINI_CUSTOM_PROFILE = args.profile
+        logger.info("Using profile from CLI argument: %s", args.profile)
     set_instance_path(instance_path)
     startup_settings = StartupSettings()
 

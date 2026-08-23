@@ -233,11 +233,12 @@ async def test_localstream_voice_methods_follow_the_active_handler() -> None:
 
 
 @pytest.mark.asyncio
-async def test_localstream_voice_methods_fall_back_when_handler_fails() -> None:
+async def test_localstream_voice_methods_fall_back_when_handler_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     """A handler that cannot answer must not break the voice UI."""
-    from reachy_mini_conversation_app.config import HF_AVAILABLE_VOICES
+    from reachy_mini_conversation_app.config import HF_AVAILABLE_VOICES, config
     from reachy_mini_conversation_app.console import LocalStream
 
+    monkeypatch.setattr(config, "CONVERSATION_BACKEND", "huggingface")
     handler = MagicMock()
     handler.get_available_voices = AsyncMock(side_effect=RuntimeError("backend down"))
     handler.get_current_voice = MagicMock(side_effect=RuntimeError("backend down"))

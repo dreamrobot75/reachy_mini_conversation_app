@@ -145,6 +145,8 @@ async def test_partial_transcription_uses_latest_snapshot(monkeypatch: Any) -> N
     monkeypatch.setattr(hf_mod, "get_session_instructions", lambda _instance_path=None: "test")
     monkeypatch.setattr(hf_mod, "get_session_voice", lambda default=HF_DEFAULT_VOICE: "Aiden")
     monkeypatch.setattr(hf_mod, "get_tool_specs", lambda: [])
+    monkeypatch.setattr(hf_mod.BackgroundToolManager, "start_up", MagicMock())
+    monkeypatch.setattr(hf_mod.BackgroundToolManager, "shutdown", AsyncMock())
 
     handler = HuggingFaceRealtimeHandler(ToolDependencies(reachy_mini=MagicMock(), movement_manager=MagicMock()))
     handler.client = _make_fake_realtime_client(
@@ -155,8 +157,6 @@ async def test_partial_transcription_uses_latest_snapshot(monkeypatch: Any) -> N
             ),
         )
     )
-    monkeypatch.setattr(type(handler.tool_manager), "start_up", MagicMock())
-    monkeypatch.setattr(type(handler.tool_manager), "shutdown", AsyncMock())
 
     await handler._run_realtime_session()
 
