@@ -76,10 +76,18 @@ class DetectFace(Tool):
             logger.info("detect_face: No face detected in frame")
             return {"detected": False, "message": "No face detected in camera frame"}
 
-        # Select the face closest to the center / most prominent
         primary_face = min(faces, key=lambda f: abs(f.azimuth_rad))
 
-        if look_at_face and deps.movement_manager is not None:
+        from reachy_mini_conversation_app.vision_config import VisionConfig
+
+        cfg = VisionConfig.get_instance()
+
+        if not cfg.face_detection_enabled:
+            logger.info("detect_face: Face detection is disabled in settings")
+            return {"detected": False, "error": "Face detection is disabled in settings"}
+
+        look_at = look_at_face or cfg.auto_gaze_enabled
+        if look_at and deps.movement_manager is not None:
             try:
                 target_pose = look_at_world_pose(primary_face.x, primary_face.y, primary_face.z)
                 current_head_pose = deps.reachy_mini.get_current_head_pose()
@@ -108,9 +116,17 @@ class DetectFace(Tool):
             except Exception as e:
                 logger.warning("Failed to queue look-at move: %s", e)
 
+        person_name = cfg.registered_person_name or "사용자"
+        person_desc = cfg.registered_person_desc or ""
+
         return {
             "detected": True,
             "face_count": len(faces),
+            "recognized_person": {
+                "name": person_name,
+                "description": person_desc,
+            },
+            "message": f"카메라 시야에서 {person_name}님의 얼굴을 감지했습니다. 거리: {primary_face.distance:.2f}m.",
             "primary_face": {
                 "distance_meters": primary_face.distance,
                 "x_meters": primary_face.x,

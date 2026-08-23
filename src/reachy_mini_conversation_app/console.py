@@ -622,20 +622,17 @@ class LocalStream:
 
             return StreamingResponse(_stream_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
-        vision_state: dict[str, Any] = {
-            "face_detection_enabled": True,
-            "auto_gaze_enabled": True,
-            "min_face_confidence": 0.5,
-            "yolo_detection_enabled": True,
-            "registered_person_name": "사용자",
-            "registered_person_desc": "주인님 / 사용자",
-        }
+        from reachy_mini_conversation_app.vision_config import VisionConfig
+
+        vision_config = VisionConfig.get_instance()
 
         @settings_app.get("/api/vision/settings")
         def _get_vision_settings() -> dict[str, Any]:
             """Return current vision & face recognition settings."""
+            from dataclasses import asdict
+
             return {
-                **vision_state,
+                **asdict(vision_config),
                 "active_camera": camera_service.get_active_device_id(),
                 "available_cameras": camera_service.list_devices(),
             }
@@ -643,18 +640,7 @@ class LocalStream:
         @settings_app.post("/api/vision/settings")
         def _save_vision_settings(payload: dict[str, Any]) -> dict[str, Any]:
             """Update vision & face recognition settings."""
-            if "face_detection_enabled" in payload:
-                vision_state["face_detection_enabled"] = bool(payload["face_detection_enabled"])
-            if "auto_gaze_enabled" in payload:
-                vision_state["auto_gaze_enabled"] = bool(payload["auto_gaze_enabled"])
-            if "min_face_confidence" in payload:
-                vision_state["min_face_confidence"] = float(payload["min_face_confidence"])
-            if "yolo_detection_enabled" in payload:
-                vision_state["yolo_detection_enabled"] = bool(payload["yolo_detection_enabled"])
-            if "registered_person_name" in payload:
-                vision_state["registered_person_name"] = str(payload["registered_person_name"]).strip()
-            if "registered_person_desc" in payload:
-                vision_state["registered_person_desc"] = str(payload["registered_person_desc"]).strip()
+            vision_config.update(payload)
             if "active_camera" in payload:
                 camera_service.select_device(str(payload["active_camera"]))
             return {"ok": True, "settings": _get_vision_settings()}
@@ -676,7 +662,7 @@ class LocalStream:
                 if not faces:
                     return {"detected": False, "message": "카메라 시야에서 얼굴이 감지되지 않았습니다."}
                 face = faces[0]
-                person_name = vision_state.get("registered_person_name", "사용자")
+                person_name = vision_config.registered_person_name or "사용자"
                 person_tag = f" ({person_name}님으로 식별됨)" if person_name else ""
                 return {
                     "detected": True,
