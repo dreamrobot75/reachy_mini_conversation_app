@@ -53,12 +53,83 @@ export async function mountTalkView({ outlet, signal }) {
   orb.root.addEventListener("click", onMicTap);
   syncMicAria();
 
-  signal.addEventListener("abort", cleanup, { once: true });
+  const cameraImg = h("img", {
+    class: "talk__camera-image",
+    src: "/api/camera/stream",
+    alt: "Reachy Mini Camera View",
+  });
+
+  cameraImg.addEventListener("error", () => {
+    // Retry feed on connection disruption
+    setTimeout(() => {
+      if (!signal.aborted) cameraImg.src = `/api/camera/stream?t=${Date.now()}`;
+    }, 2500);
+  });
+
+  const cameraSelect = h("select", {
+    class: "talk__camera-select",
+    "aria-label": "Select camera source",
+  });
+
+  const cameraSelectWrap = h(
+    "div",
+    { class: "talk__camera-header" },
+    h("span", { class: "talk__camera-live-dot" }),
+    cameraSelect
+  );
+
+  async function loadCameraDevices() {
+    try {
+      const res = await fetch("/api/camera/devices");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data?.devices || signal.aborted) return;
+      cameraSelect.replaceChildren(
+        ...data.devices.map((d) =>
+          h(
+            "option",
+            { value: d.id, selected: d.id === data.active },
+            d.name
+          )
+        )
+      );
+    } catch (e) {
+      console.debug("Failed loading camera devices", e);
+    }
+  }
+
+  cameraSelect.addEventListener("change", async (e) => {
+    const selectedId = e.target.value;
+    try {
+      await fetch(`/api/camera/select?device=${encodeURIComponent(selectedId)}`, {
+        method: "POST",
+      });
+      cameraImg.src = `/api/camera/stream?t=${Date.now()}`;
+    } catch (err) {
+      console.warn("Failed selecting camera", err);
+    }
+  });
+
+  void loadCameraDevices();
+
+  const cameraCard = h(
+    "div",
+    { class: "talk__camera-card" },
+    cameraSelectWrap,
+    h("div", { class: "talk__camera-frame-wrap" }, cameraImg)
+  );
+
+  const stage = h(
+    "div",
+    { class: "talk__stage" },
+    h("div", { class: "talk__orb-wrap" }, orb.root),
+    cameraCard
+  );
 
   const view = h(
     "section",
     { class: "view view--talk" },
-    h("div", { class: "talk__orb-wrap" }, orb.root),
+    stage,
     caption
   );
   outlet.replaceChildren(view);

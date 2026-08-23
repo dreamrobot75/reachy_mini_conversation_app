@@ -1,12 +1,13 @@
-/** Settings view: Hugging Face connection, voice, and runtime status. */
-
 import {
   applyVoice,
   describeError,
   getCurrentVoice,
   getStatus,
+  getVisionSettings,
   listVoices,
   saveBackendConfig,
+  saveVisionSettings,
+  testFaceDetection,
   untilReady,
 } from "../api.js";
 import { h } from "../ui.js";
@@ -30,8 +31,10 @@ export async function mountSettingsView({ outlet, signal }) {
       Promise.all([
         refreshStatus({ statusSection, connectionSection, signal }),
         refreshVoices({ voiceSection, signal }),
+        refreshVision({ visionSection, signal }),
       ]),
   });
+  const visionSection = buildVisionSection();
   const voiceSection = buildVoiceSection();
   const statusSection = buildStatusSection();
 
@@ -42,9 +45,10 @@ export async function mountSettingsView({ outlet, signal }) {
       "header",
       { class: "view-header" },
       h("h1", { class: "view-title" }, "Settings"),
-      h("p", { class: "view-subtitle" }, "Connection, voice, and runtime state for Reachy Mini.")
+      h("p", { class: "view-subtitle" }, "Connection, camera & vision, voice, and runtime state.")
     ),
     connectionSection.element,
+    visionSection.element,
     voiceSection.element,
     statusSection.element
   );
@@ -53,6 +57,7 @@ export async function mountSettingsView({ outlet, signal }) {
   await Promise.all([
     refreshStatus({ statusSection, connectionSection, signal }),
     refreshVoices({ voiceSection, signal }),
+    refreshVision({ visionSection, signal }),
   ]);
 }
 
@@ -183,6 +188,253 @@ function buildConnectionSection({ onSaved } = {}) {
         hfPortInput.value = String(payload.hf_direct_port);
       }
       syncLocalFields();
+    },
+  };
+}
+
+function buildVisionSection() {
+  const cameraSelect = h("select", { class: "settings-select", name: "active_camera" });
+  const faceEnabledInput = h("input", { type: "checkbox", class: "settings-checkbox", name: "face_detection_enabled", checked: true });
+  const autoGazeInput = h("input", { type: "checkbox", class: "settings-checkbox", name: "auto_gaze_enabled", checked: true });
+  const yoloEnabledInput = h("input", { type: "checkbox", class: "settings-checkbox", name: "yolo_detection_enabled", checked: true });
+
+  const personNameInput = h("input", {
+    type: "text",
+    class: "settings-input",
+    name: "registered_person_name",
+    placeholder: "예: 앤디, 주인님, 팀장님",
+    value: "사용자",
+  });
+  const personDescInput = h("input", {
+    type: "text",
+    class: "settings-input",
+    name: "registered_person_desc",
+    placeholder: "예: 검은 안경을 쓴 개발자, Reachy Mini 사용자",
+    value: "주인님 / 사용자",
+  });
+
+  const previewImg = h("img", {
+    class: "settings-camera-preview-img",
+    src: "/api/camera/stream",
+    alt: "Camera Live Preview",
+  });
+  previewImg.addEventListener("error", () => {
+    setTimeout(() => {
+      previewImg.src = `/api/camera/stream?t=${Date.now()}`;
+    }, 2000);
+  });
+
+  const previewCard = h(
+    "div",
+    { class: "settings-camera-preview-card" },
+    h(
+      "div",
+      { class: "settings-camera-preview-header" },
+      h("span", { class: "settings-camera-live-dot" }),
+      h("span", { class: "settings-camera-preview-label" }, "실시간 카메라 미리보기 (LIVE PREVIEW)")
+    ),
+    h("div", { class: "settings-camera-preview-frame" }, previewImg)
+  );
+
+  cameraSelect.addEventListener("change", async () => {
+    try {
+      await fetch(`/api/camera/select?device=${encodeURIComponent(cameraSelect.value)}`, { method: "POST" });
+      previewImg.src = `/api/camera/stream?t=${Date.now()}`;
+    } catch (err) {
+      console.warn("Failed switching camera device in preview", err);
+    }
+  });
+
+  const confSlider = h("input", {
+    type: "range",
+    class: "settings-range",
+    min: "0.2",
+    max: "0.9",
+    step: "0.05",
+    value: "0.5",
+    name: "min_face_confidence",
+  });
+  const confValue = h("span", { class: "settings-range-val" }, "50%");
+
+  confSlider.addEventListener("input", () => {
+    confValue.textContent = `${Math.round(Number.parseFloat(confSlider.value) * 100)}%`;
+  });
+
+  const testBtn = h("button", { type: "button", class: "btn btn--outline" }, "🎯 얼굴 인식 테스트");
+  const testResult = h("div", { class: "settings-vision-test-card" }, "얼굴 인식 테스트 버튼을 눌러 카메라 및 안면 인식을 테스트하세요.");
+
+  testBtn.addEventListener("click", async () => {
+    testBtn.disabled = true;
+    testResult.className = "settings-vision-test-card is-loading";
+    testResult.textContent = "얼굴을 감지하는 중…";
+    try {
+      const res = await testFaceDetection();
+      if (res.detected) {
+        testResult.className = "settings-vision-test-card is-success";
+        testResult.replaceChildren(
+          h("div", { class: "settings-vision-test-title" }, `✅ ${res.message}`),
+          h("div", { class: "settings-vision-test-coords" }, `3D 위치: X(거리): ${res.coordinates_3d?.x}m, Y(좌우): ${res.coordinates_3d?.y}m, Z(높이): ${res.coordinates_3d?.z}m`)
+        );
+      } else {
+        testResult.className = "settings-vision-test-card is-warn";
+        testResult.textContent = `⚠️ ${res.message || "얼굴을 감지하지 못했습니다."}`;
+      }
+    } catch (e) {
+      testResult.className = "settings-vision-test-card is-error";
+      testResult.textContent = `❌ 테스트 실패: ${e?.message || e}`;
+    } finally {
+      testBtn.disabled = false;
+    }
+  });
+
+  const personIdentitySection = h(
+    "div",
+    { class: "settings-person-identity-card" },
+    h("h3", { class: "settings-subsection-title" }, "👤 인식 대상(사용자) 정의"),
+    h(
+      "div",
+      { class: "settings-field-row" },
+      h(
+        "label",
+        { class: "settings-field" },
+        h("span", { class: "settings-label" }, "사용자 이름 / 호칭"),
+        personNameInput,
+        h("p", { class: "settings-hint" }, "얼굴 감지 시 로봇이 부를 이름입니다.")
+      ),
+      h(
+        "label",
+        { class: "settings-field" },
+        h("span", { class: "settings-label" }, "사용자 특징 / 역할"),
+        personDescInput,
+        h("p", { class: "settings-hint" }, "로봇에게 전달될 사용자의 외형적 특징이나 설명입니다.")
+      )
+    )
+  );
+
+  const saveBtn = h("button", { type: "submit", class: "btn btn--primary" }, "비전 설정 저장");
+  const status = h("p", { class: "settings-status", role: "status", "aria-live": "polite" });
+
+  const form = h(
+    "form",
+    { class: "settings-form" },
+    h(
+      "label",
+      { class: "settings-field" },
+      h("span", { class: "settings-label" }, "입력 카메라 장치"),
+      cameraSelect
+    ),
+    previewCard,
+    personIdentitySection,
+    h(
+      "div",
+      { class: "settings-vision-grid" },
+      h(
+        "label",
+        { class: "settings-toggle-row" },
+        faceEnabledInput,
+        h(
+          "div",
+          { class: "settings-toggle-text" },
+          h("strong", {}, "3D 안면 인식 (Face Detection)"),
+          h("span", { class: "settings-hint" }, "카메라 영상에서 사용자 얼굴의 3D 공간 위치를 실시간 감지합니다.")
+        )
+      ),
+      h(
+        "label",
+        { class: "settings-toggle-row" },
+        autoGazeInput,
+        h(
+          "div",
+          { class: "settings-toggle-text" },
+          h("strong", {}, "자동 시선 맞춤 (Look-at Gaze)"),
+          h("span", { class: "settings-hint" }, "얼굴 인식 시 로봇의 머리를 사용자 얼굴 방향으로 부드럽게 정렬합니다.")
+        )
+      ),
+      h(
+        "label",
+        { class: "settings-toggle-row" },
+        yoloEnabledInput,
+        h(
+          "div",
+          { class: "settings-toggle-text" },
+          h("strong", {}, "YOLOv8 사물 인식 (Object Detection)"),
+          h("span", { class: "settings-hint" }, "노트북, 스마트폰, 컵 등 책상 위 사물을 실시간으로 식별합니다.")
+        )
+      )
+    ),
+    h(
+      "label",
+      { class: "settings-field" },
+      h(
+        "div",
+        { class: "settings-field-head" },
+        h("span", { class: "settings-label" }, "얼굴 인식 신뢰도 감도"),
+        confValue
+      ),
+      confSlider
+    ),
+    h(
+      "div",
+      { class: "settings-test-area" },
+      h("div", { class: "settings-actions" }, testBtn),
+      testResult
+    ),
+    h("div", { class: "settings-actions" }, saveBtn),
+    status
+  );
+
+  const element = h(
+    "section",
+    { class: "settings-section" },
+    h("h2", { class: "settings-section-title" }, "Camera & Face Recognition"),
+    form
+  );
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (saveBtn.disabled) return;
+    saveBtn.disabled = true;
+    status.classList.remove("is-error");
+    status.textContent = "설정을 저장하는 중…";
+    try {
+      await saveVisionSettings({
+        active_camera: cameraSelect.value,
+        face_detection_enabled: faceEnabledInput.checked,
+        auto_gaze_enabled: autoGazeInput.checked,
+        yolo_detection_enabled: yoloEnabledInput.checked,
+        registered_person_name: personNameInput.value.trim(),
+        registered_person_desc: personDescInput.value.trim(),
+        min_face_confidence: Number.parseFloat(confSlider.value),
+      });
+      status.textContent = "비전 및 얼굴 인식 설정이 저장되었습니다.";
+    } catch (err) {
+      status.textContent = `저장 실패: ${err?.message || err}`;
+      status.classList.add("is-error");
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+
+  return {
+    element,
+    syncSettings(data) {
+      if (!data) return;
+      if (data.available_cameras) {
+        cameraSelect.replaceChildren(
+          ...data.available_cameras.map((c) =>
+            h("option", { value: c.id, selected: c.id === data.active_camera }, c.name)
+          )
+        );
+      }
+      if (data.registered_person_name !== undefined) personNameInput.value = data.registered_person_name;
+      if (data.registered_person_desc !== undefined) personDescInput.value = data.registered_person_desc;
+      if (data.face_detection_enabled !== undefined) faceEnabledInput.checked = Boolean(data.face_detection_enabled);
+      if (data.auto_gaze_enabled !== undefined) autoGazeInput.checked = Boolean(data.auto_gaze_enabled);
+      if (data.yolo_detection_enabled !== undefined) yoloEnabledInput.checked = Boolean(data.yolo_detection_enabled);
+      if (data.min_face_confidence !== undefined) {
+        confSlider.value = String(data.min_face_confidence);
+        confValue.textContent = `${Math.round(data.min_face_confidence * 100)}%`;
+      }
     },
   };
 }
@@ -368,4 +620,14 @@ async function refreshVoices({ voiceSection, signal }) {
   }
   if (signal.aborted) return;
   voiceSection.setOptions(voices, current);
+}
+
+async function refreshVision({ visionSection, signal }) {
+  try {
+    const data = await getVisionSettings();
+    if (signal.aborted) return;
+    visionSection.syncSettings(data);
+  } catch (err) {
+    console.debug("Failed refreshing vision settings", err);
+  }
 }

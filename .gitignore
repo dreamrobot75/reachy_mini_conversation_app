@@ -74,3 +74,4 @@ external_content/profile_toolsets.json
 src/reachy_mini_conversation_app/startup_settings.json
 src/reachy_mini_conversation_app/profile_toolsets.json
 reachymini_console.bat
+src/reachy_mini_conversation_app/memory.*.json

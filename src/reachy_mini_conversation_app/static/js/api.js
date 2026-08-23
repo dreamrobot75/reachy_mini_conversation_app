@@ -156,6 +156,28 @@ export const saveProfileTools = (profile, enabledTools) =>
 export const resetProfileTools = (profile) =>
   rpcCall("profile_tools.reset", { profile });
 
+export const getVisionSettings = async () => {
+  const res = await fetch("/api/vision/settings");
+  if (!res.ok) throw new Error("Failed to fetch vision settings");
+  return res.json();
+};
+
+export const saveVisionSettings = async (payload) => {
+  const res = await fetch("/api/vision/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to save vision settings");
+  return res.json();
+};
+
+export const testFaceDetection = async () => {
+  const res = await fetch("/api/vision/test-face", { method: "POST" });
+  if (!res.ok) throw new Error("Failed to test face detection");
+  return res.json();
+};
+
 /** Backend error codes that need friendlier copy than the raw code. */
 const ERROR_MESSAGES = Object.freeze({
   invalid_backend: "Unknown backend selected.",

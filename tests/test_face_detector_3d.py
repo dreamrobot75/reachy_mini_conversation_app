@@ -113,13 +113,15 @@ async def test_detect_face_tool_camera_disabled() -> None:
 
 
 @pytest.mark.asyncio
-async def test_detect_face_tool_no_frame() -> None:
+async def test_detect_face_tool_no_frame(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test DetectFace tool response when no frame is available."""
     tool = DetectFace()
     mock_robot = MagicMock()
     mock_robot.media.get_frame.return_value = None
     mock_movement = MagicMock()
     deps = ToolDependencies(reachy_mini=mock_robot, movement_manager=mock_movement, camera_enabled=True)
+
+    monkeypatch.setattr("reachy_mini_conversation_app.camera_service.CameraService.get_frame_bgr", lambda self: None)
 
     result = await tool(deps)
     assert result["detected"] is False
