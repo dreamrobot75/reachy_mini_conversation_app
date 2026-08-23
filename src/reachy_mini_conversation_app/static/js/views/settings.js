@@ -9,6 +9,8 @@ import {
   saveVisionSettings,
   testFaceDetection,
   getCalendarStatus,
+  getCalendarAuthUrl,
+  saveCalendarCredentials,
   getCalendarEvents,
   untilReady,
 } from "../api.js";
