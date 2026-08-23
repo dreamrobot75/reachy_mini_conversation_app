@@ -8,6 +8,8 @@ import {
   saveBackendConfig,
   saveVisionSettings,
   testFaceDetection,
+  getCalendarStatus,
+  getCalendarEvents,
   untilReady,
 } from "../api.js";
 import { h } from "../ui.js";
@@ -32,9 +34,11 @@ export async function mountSettingsView({ outlet, signal }) {
         refreshStatus({ statusSection, connectionSection, signal }),
         refreshVoices({ voiceSection, signal }),
         refreshVision({ visionSection, signal }),
+        refreshCalendar({ calendarSection, signal }),
       ]),
   });
   const visionSection = buildVisionSection();
+  const calendarSection = buildCalendarSection();
   const voiceSection = buildVoiceSection();
   const statusSection = buildStatusSection();
 
@@ -45,10 +49,11 @@ export async function mountSettingsView({ outlet, signal }) {
       "header",
       { class: "view-header" },
       h("h1", { class: "view-title" }, "Settings"),
-      h("p", { class: "view-subtitle" }, "Connection, camera & vision, voice, and runtime state.")
+      h("p", { class: "view-subtitle" }, "Connection, camera & vision, Google calendar, voice, and runtime state.")
     ),
     connectionSection.element,
     visionSection.element,
+    calendarSection.element,
     voiceSection.element,
     statusSection.element
   );
@@ -58,6 +63,7 @@ export async function mountSettingsView({ outlet, signal }) {
     refreshStatus({ statusSection, connectionSection, signal }),
     refreshVoices({ voiceSection, signal }),
     refreshVision({ visionSection, signal }),
+    refreshCalendar({ calendarSection, signal }),
   ]);
 }
 
@@ -629,5 +635,94 @@ async function refreshVision({ visionSection, signal }) {
     visionSection.syncSettings(data);
   } catch (err) {
     console.debug("Failed refreshing vision settings", err);
+  }
+}
+
+function buildCalendarSection() {
+  const statusBadge = h("div", { class: "settings-calendar-badge" }, "확인 중…");
+  const testBtn = h("button", { type: "button", class: "btn btn--outline" }, "📅 오늘 일정 테스트 조회");
+  const testResult = h("div", { class: "settings-vision-test-card" }, "구글 캘린더 연동 상태를 확인하고 오늘의 일정을 조회합니다.");
+
+  testBtn.addEventListener("click", async () => {
+    testBtn.disabled = true;
+    testResult.className = "settings-vision-test-card is-loading";
+    testResult.textContent = "일정을 조회하는 중…";
+    try {
+      const res = await getCalendarEvents();
+      if (res.authenticated) {
+        testResult.className = "settings-vision-test-card is-success";
+        testResult.replaceChildren(
+          h("div", { class: "settings-vision-test-title" }, `✅ ${res.message}`),
+          ...(res.events && res.events.length > 0
+            ? res.events.map((e) =>
+                h(
+                  "div",
+                  { class: "settings-calendar-event-item" },
+                  h("strong", {}, `• ${e.summary}`),
+                  h("span", { class: "settings-hint" }, ` (${e.start?.includes("T") ? e.start.slice(11, 16) : "종일"} ~ ${e.end?.includes("T") ? e.end.slice(11, 16) : "종일"})`)
+                )
+              )
+            : [])
+        );
+      } else {
+        testResult.className = "settings-vision-test-card is-warn";
+        testResult.textContent = `⚠️ ${res.message}`;
+      }
+    } catch (err) {
+      testResult.className = "settings-vision-test-card is-error";
+      testResult.textContent = `❌ 조회 실패: ${err?.message || err}`;
+    } finally {
+      testBtn.disabled = false;
+    }
+  });
+
+  const element = h(
+    "section",
+    { class: "settings-section" },
+    h("h2", { class: "settings-section-title" }, "Google Calendar & Schedule"),
+    h(
+      "div",
+      { class: "settings-field" },
+      h(
+        "div",
+        { class: "settings-field-head" },
+        h("span", { class: "settings-label" }, "Google OAuth 2.0 연동 상태"),
+        statusBadge
+      ),
+      h(
+        "p",
+        { class: "settings-hint" },
+        "프로젝트 루트에 Google Cloud Console에서 다운로드한 credentials.json을 배치하면 Reachy Mini가 일정을 실시간으로 브리핑합니다."
+      )
+    ),
+    h(
+      "div",
+      { class: "settings-test-area" },
+      h("div", { class: "settings-actions" }, testBtn),
+      testResult
+    )
+  );
+
+  return {
+    element,
+    setStatus(isAuth) {
+      if (isAuth) {
+        statusBadge.textContent = "🟢 Google 계정 연동됨 (OAuth Active)";
+        statusBadge.className = "settings-calendar-badge is-connected";
+      } else {
+        statusBadge.textContent = "⚪ credentials.json 설정 필요";
+        statusBadge.className = "settings-calendar-badge is-disconnected";
+      }
+    },
+  };
+}
+
+async function refreshCalendar({ calendarSection, signal }) {
+  try {
+    const data = await getCalendarStatus();
+    if (signal.aborted) return;
+    calendarSection.setStatus(Boolean(data?.authenticated));
+  } catch (err) {
+    console.debug("Failed refreshing calendar status", err);
   }
 }

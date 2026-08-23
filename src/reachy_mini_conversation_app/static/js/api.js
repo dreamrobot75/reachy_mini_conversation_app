@@ -178,6 +178,18 @@ export const testFaceDetection = async () => {
   return res.json();
 };
 
+export const getCalendarStatus = async () => {
+  const res = await fetch("/api/calendar/status");
+  if (!res.ok) throw new Error("Failed to fetch calendar status");
+  return res.json();
+};
+
+export const getCalendarEvents = async () => {
+  const res = await fetch("/api/calendar/events");
+  if (!res.ok) throw new Error("Failed to fetch calendar events");
+  return res.json();
+};
+
 /** Backend error codes that need friendlier copy than the raw code. */
 const ERROR_MESSAGES = Object.freeze({
   invalid_backend: "Unknown backend selected.",

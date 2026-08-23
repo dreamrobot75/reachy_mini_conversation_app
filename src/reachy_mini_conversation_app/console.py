@@ -679,6 +679,22 @@ class LocalStream:
                 logger.error("Face test failed: %s", e)
                 return {"detected": False, "error": str(e), "message": f"얼굴 인식 테스트 오류: {e}"}
 
+        from reachy_mini_conversation_app.calendar_service import GoogleCalendarService
+
+        calendar_service = GoogleCalendarService.get_instance()
+
+        @settings_app.get("/api/calendar/status")
+        def _get_calendar_status() -> dict[str, Any]:
+            """Return Google Calendar OAuth connection status."""
+            return {
+                "authenticated": calendar_service.is_authenticated(),
+            }
+
+        @settings_app.get("/api/calendar/events")
+        def _get_calendar_events() -> dict[str, Any]:
+            """Return today's calendar events."""
+            return calendar_service.get_events(target_date="today")
+
         # ── JSON-RPC control surface (/rpc) ──────────────────────────────
         # The single wire format both the local browser UI and remote WebRTC
         # clients use (the daemon relays it over the DataChannel). Notifications
