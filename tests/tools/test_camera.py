@@ -28,6 +28,34 @@ async def test_camera_tool_returns_base64_of_sdk_jpeg() -> None:
 
 
 @pytest.mark.asyncio
+async def test_camera_tool_captures_a_fresh_frame_on_each_call() -> None:
+    """Repeat questions must capture a new frame, never reuse the previous one."""
+    reachy_mini = MagicMock()
+    reachy_mini.media.get_frame_jpeg.side_effect = [b"first-frame", b"second-frame"]
+
+    deps = ToolDependencies(
+        reachy_mini=reachy_mini,
+        movement_manager=MagicMock(),
+        camera_enabled=True,
+    )
+
+    camera = Camera()
+    first = await camera(deps, question="What is this?")
+    second = await camera(deps, question="And now?")
+
+    assert first["b64_im"] == base64.b64encode(b"first-frame").decode("utf-8")
+    assert second["b64_im"] == base64.b64encode(b"second-frame").decode("utf-8")
+    assert reachy_mini.media.get_frame_jpeg.call_count == 2
+
+
+def test_camera_tool_description_demands_recapture_for_every_question() -> None:
+    """The tool description must tell the model to re-call the tool for each visual question."""
+    description = Camera.description.lower()
+    assert "outdated" in description
+    assert "every new question" in description
+
+
+@pytest.mark.asyncio
 async def test_camera_tool_reports_error_when_no_frame() -> None:
     """With no frame available the tool returns an error."""
     reachy_mini = MagicMock()

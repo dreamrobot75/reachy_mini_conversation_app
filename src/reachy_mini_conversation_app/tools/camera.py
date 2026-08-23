@@ -18,6 +18,9 @@ class Camera(Tool):
         "check their appearance, describe the scene, or comment on how they look. "
         "Also use it when the user asks what you can see or wants your visual opinion. "
         "The camera is live, each call captures the current moment. "
+        "Previously captured images are always outdated: for EVERY new question about what you see, "
+        "call this tool again and answer only from the newest picture, even if the question repeats "
+        "or is about the same object. "
         "If the user asks you to look without saying at what, do not ask for clarification, call this tool and describe what you see. "
     )
     parameters_schema = {

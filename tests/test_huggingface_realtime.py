@@ -216,6 +216,21 @@ async def test_parallel_tool_calls_trigger_single_response(monkeypatch: Any) -> 
     assert create.await_count == 1
 
 
+def test_camera_tool_result_carries_freshness_note() -> None:
+    """The camera result sent to the model must mark earlier images as outdated."""
+    sanitized = HuggingFaceRealtimeHandler._sanitize_tool_result_for_model("camera", {"b64_im": "abc"})
+
+    assert "b64_im" not in sanitized
+    assert sanitized["image_attached"] is True
+    assert "outdated" in sanitized["note"]
+
+
+def test_non_camera_tool_result_is_untouched() -> None:
+    """Sanitizing must not alter results from other tools."""
+    result = {"status": "ok"}
+    assert HuggingFaceRealtimeHandler._sanitize_tool_result_for_model("move_head", result) is result
+
+
 def test_handler_uses_hf_startup_voice_at_startup(monkeypatch: Any) -> None:
     """Hugging Face startup should restore persisted HF voices."""
     handler = HuggingFaceRealtimeHandler(

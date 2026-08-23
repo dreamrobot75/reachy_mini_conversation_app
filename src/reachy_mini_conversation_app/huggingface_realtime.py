@@ -171,6 +171,11 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
             sanitized = dict(tool_result)
             sanitized.pop("b64_im", None)
             sanitized["image_attached"] = True
+            sanitized["note"] = (
+                "A fresh camera image is attached below. Answer the current question from this "
+                "newest image only; earlier camera images in the conversation are outdated. "
+                "For any future visual question, call the camera tool again."
+            )
             return sanitized
         return tool_result
 
