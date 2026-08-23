@@ -10,7 +10,7 @@ import asyncio
 import logging
 from typing import Any, List, Optional
 from pathlib import Path
-from collections.abc import Callable
+from collections.abc import Callable, AsyncIterator
 
 import numpy as np
 
@@ -55,11 +55,12 @@ try:
     # FastAPI is provided by the Reachy Mini Apps runtime
     from fastapi import FastAPI, Response
     from pydantic import BaseModel
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, StreamingResponse
     from starlette.staticfiles import StaticFiles
 except Exception:  # pragma: no cover - only loaded when settings_app is used
     FastAPI = object  # type: ignore
     FileResponse = object  # type: ignore
+    StreamingResponse = object  # type: ignore
     StaticFiles = object  # type: ignore
     BaseModel = object  # type: ignore
 
@@ -576,6 +577,42 @@ class LocalStream:
         @settings_app.get("/favicon.ico")
         def _favicon() -> Response:
             return Response(status_code=204)
+
+        @settings_app.get("/api/camera/frame")
+        def _camera_frame() -> Response:
+            """Return the latest camera frame as a single JPEG image."""
+            try:
+                if self.handler and getattr(self.handler, "deps", None):
+                    media = getattr(self.handler.deps.reachy_mini, "media", None)
+                    if media and getattr(self.handler.deps, "camera_enabled", True):
+                        frame_bytes = media.get_frame_jpeg()
+                        if frame_bytes:
+                            return Response(content=frame_bytes, media_type="image/jpeg")
+            except Exception as e:
+                logger.debug("Failed to fetch camera frame: %s", e)
+            return Response(status_code=204)
+
+        @settings_app.get("/api/camera/stream")
+        async def _camera_stream() -> Any:
+            """Stream live camera frames via multipart/x-mixed-replace MJPEG."""
+
+            async def _stream_frames() -> AsyncIterator[bytes]:
+                while True:
+                    try:
+                        frame_bytes = None
+                        if self.handler and getattr(self.handler, "deps", None):
+                            media = getattr(self.handler.deps.reachy_mini, "media", None)
+                            if media and getattr(self.handler.deps, "camera_enabled", True):
+                                frame_bytes = media.get_frame_jpeg()
+                        if frame_bytes:
+                            yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n")
+                        await asyncio.sleep(0.06)  # ~15 FPS
+                    except asyncio.CancelledError:
+                        break
+                    except Exception:
+                        await asyncio.sleep(0.2)
+
+            return StreamingResponse(_stream_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
         # ── JSON-RPC control surface (/rpc) ──────────────────────────────
         # The single wire format both the local browser UI and remote WebRTC

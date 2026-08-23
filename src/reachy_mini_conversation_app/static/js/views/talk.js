@@ -53,12 +53,42 @@ export async function mountTalkView({ outlet, signal }) {
   orb.root.addEventListener("click", onMicTap);
   syncMicAria();
 
-  signal.addEventListener("abort", cleanup, { once: true });
+  const cameraImg = h("img", {
+    class: "talk__camera-image",
+    src: "/api/camera/stream",
+    alt: "Reachy Mini Camera View",
+  });
+
+  cameraImg.addEventListener("error", () => {
+    // Retry feed on connection disruption
+    setTimeout(() => {
+      if (!signal.aborted) cameraImg.src = `/api/camera/stream?t=${Date.now()}`;
+    }, 2500);
+  });
+
+  const cameraCard = h(
+    "div",
+    { class: "talk__camera-card" },
+    h(
+      "div",
+      { class: "talk__camera-header" },
+      h("span", { class: "talk__camera-live-dot" }),
+      h("span", { class: "talk__camera-title" }, "CAMERA FEED")
+    ),
+    h("div", { class: "talk__camera-frame-wrap" }, cameraImg)
+  );
+
+  const stage = h(
+    "div",
+    { class: "talk__stage" },
+    h("div", { class: "talk__orb-wrap" }, orb.root),
+    cameraCard
+  );
 
   const view = h(
     "section",
     { class: "view view--talk" },
-    h("div", { class: "talk__orb-wrap" }, orb.root),
+    stage,
     caption
   );
   outlet.replaceChildren(view);
