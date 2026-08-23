@@ -22,11 +22,9 @@ def test_calendar_service_unauthenticated_graceful_response() -> None:
 def test_calendar_service_success_formatting() -> None:
     """When events exist, verify correct summary and message formatting."""
     service = GoogleCalendarService()
-    mock_creds = MagicMock()
-
-    mock_service_obj = MagicMock()
-    mock_events = MagicMock()
-    mock_events.list.return_value.execute.return_value = {
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
         "items": [
             {
                 "summary": "오픈소스 개발자대회 멘토링",
@@ -40,11 +38,10 @@ def test_calendar_service_success_formatting() -> None:
             },
         ]
     }
-    mock_service_obj.events.return_value = mock_events
 
     with (
-        patch.object(service, "get_credentials", return_value=mock_creds),
-        patch("googleapiclient.discovery.build", return_value=mock_service_obj),
+        patch.object(service, "get_access_token", return_value="mock_access_token"),
+        patch("httpx.get", return_value=mock_resp),
     ):
         result = service.get_events(target_date="today")
         assert result["authenticated"] is True

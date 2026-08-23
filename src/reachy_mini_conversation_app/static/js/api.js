@@ -190,6 +190,22 @@ export const getCalendarAuthUrl = async () => {
   return res.json();
 };
 
+export const setCalendarToken = async (payload) => {
+  const res = await fetch("/api/calendar/set-token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed saving Google token");
+  return res.json();
+};
+
+export const logoutCalendar = async () => {
+  const res = await fetch("/api/calendar/logout", { method: "POST" });
+  if (!res.ok) throw new Error("Failed logging out of Google Calendar");
+  return res.json();
+};
+
 export const saveCalendarCredentials = async (payload) => {
   const res = await fetch("/api/calendar/save-credentials", {
     method: "POST",

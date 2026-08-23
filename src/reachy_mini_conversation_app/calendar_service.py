@@ -149,6 +149,39 @@ class GoogleCalendarService:
             logger.error("Failed obtaining Google Calendar credentials: %s", e)
             return None
 
+    def set_access_token(self, token: str, expires_in: int = 3600) -> None:
+        """Save access token received directly from browser OAuth."""
+        import json
+
+        data = {
+            "token": token,
+            "saved_at": datetime.datetime.now().isoformat(),
+            "expires_in": expires_in,
+            "scopes": SCOPES,
+        }
+        TOKEN_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        logger.info("Saved Google Calendar access token to %s", TOKEN_PATH)
+
+    def logout(self) -> None:
+        """Remove saved token and credentials."""
+        if TOKEN_PATH.exists():
+            try:
+                TOKEN_PATH.unlink()
+            except Exception as e:
+                logger.warning("Failed deleting token file: %s", e)
+
+    def get_access_token(self) -> Optional[str]:
+        """Extract access token string from token file or credentials."""
+        if TOKEN_PATH.exists():
+            try:
+                import json
+
+                data = json.loads(TOKEN_PATH.read_text(encoding="utf-8"))
+                return str(data.get("token") or "")
+            except Exception as e:
+                logger.warning("Failed reading token file: %s", e)
+        return None
+
     def get_events(
         self,
         target_date: str = "today",
@@ -170,40 +203,49 @@ class GoogleCalendarService:
         start_of_day = datetime.datetime.combine(query_date, datetime.time.min).isoformat() + "Z"
         end_of_day = datetime.datetime.combine(query_date, datetime.time.max).isoformat() + "Z"
 
-        creds = self.get_credentials()
-        if creds is None:
+        token = self.get_access_token()
+        if not token:
+            creds = self.get_credentials()
+            if creds and hasattr(creds, "token") and creds.token:
+                token = str(creds.token)
+
+        if not token:
             return {
                 "authenticated": False,
                 "date": query_date.isoformat(),
                 "event_count": 0,
                 "events": [],
-                "message": (
-                    "구글 캘린더 OAuth 인증이 필요합니다. "
-                    "프로젝트 루트 디렉토리에 credentials.json 파일을 배치하거나 "
-                    "Settings 화면에서 구글 계정을 연동해 주세요."
-                ),
+                "message": "구글 캘린더 OAuth 인증이 필요합니다. Settings 화면에서 'Google 계정 로그인' 버튼을 눌러 연동해 주세요.",
             }
 
         try:
-            import importlib
+            import httpx
 
-            discovery_mod = importlib.import_module("googleapiclient.discovery")
-            build_fn = getattr(discovery_mod, "build")
+            headers = {"Authorization": f"Bearer {token}"}
+            params = {
+                "timeMin": start_of_day,
+                "timeMax": end_of_day,
+                "maxResults": str(max_results),
+                "singleEvents": "true",
+                "orderBy": "startTime",
+            }
+            url = f"https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events"
+            resp = httpx.get(url, headers=headers, params=params, timeout=10.0)
 
-            service = build_fn("calendar", "v3", credentials=creds)
-            events_result = (
-                service.events()
-                .list(
-                    calendarId=calendar_id,
-                    timeMin=start_of_day,
-                    timeMax=end_of_day,
-                    maxResults=max_results,
-                    singleEvents=True,
-                    orderBy="startTime",
-                )
-                .execute()
-            )
-            items = events_result.get("items", [])
+            if resp.status_code == 401:
+                # Token expired
+                self.logout()
+                return {
+                    "authenticated": False,
+                    "date": query_date.isoformat(),
+                    "event_count": 0,
+                    "events": [],
+                    "message": "구글 인증 토큰이 만료되었습니다. Settings 화면에서 다시 로그인해 주세요.",
+                }
+
+            resp.raise_for_status()
+            data = resp.json()
+            items = data.get("items", [])
             formatted_events = []
             for item in items:
                 start = item.get("start", {}).get("dateTime", item.get("start", {}).get("date", ""))

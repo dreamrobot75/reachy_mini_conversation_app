@@ -694,6 +694,22 @@ class LocalStream:
                 "has_credentials": calendar_service.has_credentials(),
             }
 
+        @settings_app.post("/api/calendar/set-token")
+        def _set_calendar_token(payload: dict[str, Any]) -> dict[str, Any]:
+            """Save Google OAuth access token directly from frontend popup."""
+            token = str(payload.get("token") or "").strip()
+            if not token:
+                return {"ok": False, "error": "토큰 값이 비어있습니다."}
+            expires_in = int(payload.get("expires_in") or 3600)
+            calendar_service.set_access_token(token, expires_in=expires_in)
+            return {"ok": True, "status": _get_calendar_status()}
+
+        @settings_app.post("/api/calendar/logout")
+        def _logout_calendar() -> dict[str, Any]:
+            """Log out and clear saved Google Calendar tokens."""
+            calendar_service.logout()
+            return {"ok": True, "status": _get_calendar_status()}
+
         @settings_app.post("/api/calendar/save-credentials")
         def _save_calendar_credentials(payload: dict[str, Any]) -> dict[str, Any]:
             """Save client ID and client secret directly from Settings UI."""

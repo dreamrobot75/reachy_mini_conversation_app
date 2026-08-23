@@ -11,6 +11,8 @@ import {
   getCalendarStatus,
   getCalendarAuthUrl,
   saveCalendarCredentials,
+  setCalendarToken,
+  logoutCalendar,
   getCalendarEvents,
   untilReady,
 } from "../api.js";
@@ -644,6 +646,7 @@ function buildCalendarSection() {
   const statusBadge = h("div", { class: "settings-calendar-badge" }, "확인 중…");
   const testBtn = h("button", { type: "button", class: "btn btn--outline" }, "📅 오늘 일정 테스트 조회");
   const authBtn = h("button", { type: "button", class: "btn btn--primary" }, "🔑 Google 계정 로그인 (OAuth 연동)");
+  const logoutBtn = h("button", { type: "button", class: "btn btn--outline", style: "display: none;" }, "연동 해제");
   const testResult = h("div", { class: "settings-vision-test-card" }, "구글 캘린더 연동 상태를 확인하고 오늘의 일정을 조회합니다.");
 
   const clientIdInput = h("input", {
@@ -656,13 +659,17 @@ function buildCalendarSection() {
     class: "settings-input",
     placeholder: "예: GOCSPX-xxxxxxxxxxxx",
   });
-  const saveCredsBtn = h("button", { type: "button", class: "btn btn--outline" }, "클라이언트 키 저장");
+  const saveCredsBtn = h("button", { type: "button", class: "btn btn--primary" }, "클라이언트 키 저장 후 로그인");
 
   const credsConfigCard = h(
     "div",
     { class: "settings-creds-card", style: "display: none;" },
-    h("h3", { class: "settings-subsection-title" }, "🛠️ OAuth 클라이언트 키 직접 입력"),
-    h("p", { class: "settings-hint" }, "Google Cloud Console에서 발급받은 데스크톱 앱 Client ID 및 Secret을 입력하세요 (또는 프로젝트 루트에 credentials.json 파일 배치)."),
+    h("h3", { class: "settings-subsection-title" }, "🛠️ Google OAuth 클라이언트 설정"),
+    h(
+      "p",
+      { class: "settings-hint" },
+      "Google Cloud Console에서 발급받은 OAuth 클라이언트 ID와 Secret을 입력하면 브라우저 로그인이 즉시 활성화됩니다 (또는 프로젝트에 credentials.json 배치)."
+    ),
     h(
       "div",
       { class: "settings-field-row" },
@@ -671,6 +678,30 @@ function buildCalendarSection() {
     ),
     h("div", { class: "settings-actions" }, saveCredsBtn)
   );
+
+  const launchBrowserAuth = async () => {
+    authBtn.disabled = true;
+    testResult.className = "settings-vision-test-card is-loading";
+    testResult.textContent = "Google OAuth 로그인 창을 준비하는 중…";
+    try {
+      const data = await getCalendarAuthUrl();
+      if (data.auth_url) {
+        testResult.className = "settings-vision-test-card is-loading";
+        testResult.textContent = "🌐 브라우저 팝업 창에서 Google 계정 로그인을 진행해 주세요.";
+        window.open(data.auth_url, "_blank", "width=600,height=720");
+      } else {
+        testResult.className = "settings-vision-test-card is-warn";
+        testResult.textContent = "⚙️ 처음 한 번만 Client ID와 Secret을 입력해 주세요.";
+        credsConfigCard.style.display = "block";
+      }
+    } catch (err) {
+      testResult.className = "settings-vision-test-card is-warn";
+      testResult.textContent = `⚙️ OAuth 설정 필요: ${err?.message || err}`;
+      credsConfigCard.style.display = "block";
+    } finally {
+      authBtn.disabled = false;
+    }
+  };
 
   saveCredsBtn.addEventListener("click", async () => {
     const cid = clientIdInput.value.trim();
@@ -683,10 +714,11 @@ function buildCalendarSection() {
     saveCredsBtn.disabled = true;
     try {
       await saveCalendarCredentials({ client_id: cid, client_secret: csec });
-      testResult.className = "settings-vision-test-card is-success";
-      testResult.textContent = "✅ 클라이언트 키가 저장되었습니다! 'Google 계정 로그인' 버튼을 눌러 브라우저 인증을 완료하세요.";
+      testResult.className = "settings-vision-test-card is-loading";
+      testResult.textContent = "클라이언트 키 저장 완료. Google 로그인 창을 엽니다…";
       credsConfigCard.style.display = "none";
       await refreshCalendarStatus();
+      await launchBrowserAuth();
     } catch (e) {
       testResult.className = "settings-vision-test-card is-error";
       testResult.textContent = `❌ 저장 실패: ${e?.message || e}`;
@@ -695,31 +727,22 @@ function buildCalendarSection() {
     }
   });
 
-  const launchBrowserAuth = async () => {
-    authBtn.disabled = true;
-    testResult.className = "settings-vision-test-card is-loading";
-    testResult.textContent = "Google OAuth 로그인 창을 여는 중…";
-    try {
-      const data = await getCalendarAuthUrl();
-      if (data.auth_url) {
-        testResult.className = "settings-vision-test-card is-loading";
-        testResult.textContent = "🌐 웹 브라우저에서 Google 계정 로그인을 진행해 주세요.";
-        window.open(data.auth_url, "_blank", "width=600,height=720");
-      } else {
-        testResult.className = "settings-vision-test-card is-warn";
-        testResult.textContent = `⚠️ ${data.error || "OAuth URL 생성 실패: credentials.json을 먼저 설정해 주세요."}`;
-        credsConfigCard.style.display = "block";
-      }
-    } catch (err) {
-      testResult.className = "settings-vision-test-card is-error";
-      testResult.textContent = `❌ 인증 시작 오류: ${err?.message || err}`;
-      credsConfigCard.style.display = "block";
-    } finally {
-      authBtn.disabled = false;
-    }
-  };
-
   authBtn.addEventListener("click", launchBrowserAuth);
+
+  logoutBtn.addEventListener("click", async () => {
+    logoutBtn.disabled = true;
+    try {
+      await logoutCalendar();
+      testResult.className = "settings-vision-test-card";
+      testResult.textContent = "Google Calendar 연동이 해제되었습니다.";
+      await refreshCalendarStatus();
+    } catch (e) {
+      testResult.className = "settings-vision-test-card is-error";
+      testResult.textContent = `❌ 연동 해제 실패: ${e?.message || e}`;
+    } finally {
+      logoutBtn.disabled = false;
+    }
+  });
 
   const fetchTodayEvents = async () => {
     testBtn.disabled = true;
@@ -745,7 +768,6 @@ function buildCalendarSection() {
       } else {
         testResult.className = "settings-vision-test-card is-warn";
         testResult.textContent = `⚠️ ${res.message}`;
-        // Automatically open OAuth browser flow on click!
         await launchBrowserAuth();
       }
     } catch (err) {
@@ -772,11 +794,13 @@ function buildCalendarSection() {
       statusBadge.textContent = "🟢 Google 계정 연동됨 (OAuth Active)";
       statusBadge.className = "settings-calendar-badge is-connected";
       authBtn.style.display = "none";
+      logoutBtn.style.display = "inline-flex";
       credsConfigCard.style.display = "none";
     } else {
-      statusBadge.textContent = hasCreds ? "🟡 OAuth 로그인 필요" : "⚪ credentials.json 설정 필요";
+      statusBadge.textContent = hasCreds ? "🟡 OAuth 로그인 필요" : "⚪ OAuth 설정 필요";
       statusBadge.className = "settings-calendar-badge is-disconnected";
       authBtn.style.display = "inline-flex";
+      logoutBtn.style.display = "none";
       if (!hasCreds) {
         credsConfigCard.style.display = "block";
       }
@@ -806,14 +830,14 @@ function buildCalendarSection() {
       h(
         "p",
         { class: "settings-hint" },
-        "Google 계정 OAuth 로그인을 완료하면 Reachy Mini가 사용자의 캘린더 일정을 실시간으로 브리핑합니다."
+        "Google 계정 로그인을 완료하면 Reachy Mini가 사용자의 캘린더 일정을 실시간으로 브리핑합니다."
       )
     ),
     credsConfigCard,
     h(
       "div",
       { class: "settings-test-area" },
-      h("div", { class: "settings-actions" }, authBtn, testBtn),
+      h("div", { class: "settings-actions" }, authBtn, testBtn, logoutBtn),
       testResult
     )
   );
