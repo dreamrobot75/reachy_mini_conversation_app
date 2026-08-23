@@ -108,10 +108,11 @@ class CameraService:
         if active == "robot":
             return self._read_robot_frame()
 
-        # 3. If auto: try USB webcam 0 first, then fall back to robot
-        frame = self._read_opencv_device(0)
-        if frame is not None:
-            return frame
+        # 3. If auto: try available USB webcams first, then fall back to robot
+        for idx in (0, 1):
+            frame = self._read_opencv_device(idx)
+            if frame is not None:
+                return frame
         return self._read_robot_frame()
 
     def _read_opencv_device(self, index: int) -> Optional[np.ndarray]:
@@ -120,7 +121,11 @@ class CameraService:
             if self._cap is None or self._cap_device_index != index:
                 if self._cap is not None:
                     self._cap.release()
-                self._cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+                cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+                if not cap.isOpened():
+                    cap.release()
+                    cap = cv2.VideoCapture(index)
+                self._cap = cap
                 self._cap_device_index = index
 
             if self._cap is not None and self._cap.isOpened():

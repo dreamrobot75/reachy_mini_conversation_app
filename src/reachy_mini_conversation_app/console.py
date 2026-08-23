@@ -627,6 +627,8 @@ class LocalStream:
             "auto_gaze_enabled": True,
             "min_face_confidence": 0.5,
             "yolo_detection_enabled": True,
+            "registered_person_name": "사용자",
+            "registered_person_desc": "주인님 / 사용자",
         }
 
         @settings_app.get("/api/vision/settings")
@@ -649,6 +651,10 @@ class LocalStream:
                 vision_state["min_face_confidence"] = float(payload["min_face_confidence"])
             if "yolo_detection_enabled" in payload:
                 vision_state["yolo_detection_enabled"] = bool(payload["yolo_detection_enabled"])
+            if "registered_person_name" in payload:
+                vision_state["registered_person_name"] = str(payload["registered_person_name"]).strip()
+            if "registered_person_desc" in payload:
+                vision_state["registered_person_desc"] = str(payload["registered_person_desc"]).strip()
             if "active_camera" in payload:
                 camera_service.select_device(str(payload["active_camera"]))
             return {"ok": True, "settings": _get_vision_settings()}
@@ -658,7 +664,10 @@ class LocalStream:
             """Test real-time 3D face recognition on the active camera frame."""
             frame = camera_service.get_frame_bgr()
             if frame is None:
-                return {"detected": False, "message": "카메라 영상을 가져올 수 없습니다."}
+                return {
+                    "detected": False,
+                    "message": "카메라 영상을 가져올 수 없습니다. 카메라가 연결되어 있는지 확인해 주세요.",
+                }
             try:
                 from reachy_mini_conversation_app.vision.face_detector_3d import Face3DDetector
 
@@ -667,15 +676,18 @@ class LocalStream:
                 if not faces:
                     return {"detected": False, "message": "카메라 시야에서 얼굴이 감지되지 않았습니다."}
                 face = faces[0]
+                person_name = vision_state.get("registered_person_name", "사용자")
+                person_tag = f" ({person_name}님으로 식별됨)" if person_name else ""
                 return {
                     "detected": True,
                     "distance": round(face.distance, 2),
+                    "person_name": person_name,
                     "coordinates_3d": {
                         "x": round(face.x, 3),
                         "y": round(face.y, 3),
                         "z": round(face.z, 3),
                     },
-                    "message": f"얼굴 인식 성공! (전방 거리: {face.x:.2f}m, 좌우: {face.y:+.2f}m, 높이: {face.z:+.2f}m)",
+                    "message": f"얼굴 인식 성공{person_tag}! (거리: {face.x:.2f}m, 좌우: {face.y:+.2f}m, 높이: {face.z:+.2f}m)",
                 }
             except Exception as e:
                 logger.error("Face test failed: %s", e)

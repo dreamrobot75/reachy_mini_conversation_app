@@ -198,6 +198,53 @@ function buildVisionSection() {
   const autoGazeInput = h("input", { type: "checkbox", class: "settings-checkbox", name: "auto_gaze_enabled", checked: true });
   const yoloEnabledInput = h("input", { type: "checkbox", class: "settings-checkbox", name: "yolo_detection_enabled", checked: true });
 
+  const personNameInput = h("input", {
+    type: "text",
+    class: "settings-input",
+    name: "registered_person_name",
+    placeholder: "예: 앤디, 주인님, 팀장님",
+    value: "사용자",
+  });
+  const personDescInput = h("input", {
+    type: "text",
+    class: "settings-input",
+    name: "registered_person_desc",
+    placeholder: "예: 검은 안경을 쓴 개발자, Reachy Mini 사용자",
+    value: "주인님 / 사용자",
+  });
+
+  const previewImg = h("img", {
+    class: "settings-camera-preview-img",
+    src: "/api/camera/stream",
+    alt: "Camera Live Preview",
+  });
+  previewImg.addEventListener("error", () => {
+    setTimeout(() => {
+      previewImg.src = `/api/camera/stream?t=${Date.now()}`;
+    }, 2000);
+  });
+
+  const previewCard = h(
+    "div",
+    { class: "settings-camera-preview-card" },
+    h(
+      "div",
+      { class: "settings-camera-preview-header" },
+      h("span", { class: "settings-camera-live-dot" }),
+      h("span", { class: "settings-camera-preview-label" }, "실시간 카메라 미리보기 (LIVE PREVIEW)")
+    ),
+    h("div", { class: "settings-camera-preview-frame" }, previewImg)
+  );
+
+  cameraSelect.addEventListener("change", async () => {
+    try {
+      await fetch(`/api/camera/select?device=${encodeURIComponent(cameraSelect.value)}`, { method: "POST" });
+      previewImg.src = `/api/camera/stream?t=${Date.now()}`;
+    } catch (err) {
+      console.warn("Failed switching camera device in preview", err);
+    }
+  });
+
   const confSlider = h("input", {
     type: "range",
     class: "settings-range",
@@ -226,7 +273,7 @@ function buildVisionSection() {
         testResult.className = "settings-vision-test-card is-success";
         testResult.replaceChildren(
           h("div", { class: "settings-vision-test-title" }, `✅ ${res.message}`),
-          h("div", { class: "settings-vision-test-coords" }, `3D 위치: X: ${res.coordinates_3d?.x}m, Y: ${res.coordinates_3d?.y}m, Z: ${res.coordinates_3d?.z}m`)
+          h("div", { class: "settings-vision-test-coords" }, `3D 위치: X(거리): ${res.coordinates_3d?.x}m, Y(좌우): ${res.coordinates_3d?.y}m, Z(높이): ${res.coordinates_3d?.z}m`)
         );
       } else {
         testResult.className = "settings-vision-test-card is-warn";
@@ -240,6 +287,30 @@ function buildVisionSection() {
     }
   });
 
+  const personIdentitySection = h(
+    "div",
+    { class: "settings-person-identity-card" },
+    h("h3", { class: "settings-subsection-title" }, "👤 인식 대상(사용자) 정의"),
+    h(
+      "div",
+      { class: "settings-field-row" },
+      h(
+        "label",
+        { class: "settings-field" },
+        h("span", { class: "settings-label" }, "사용자 이름 / 호칭"),
+        personNameInput,
+        h("p", { class: "settings-hint" }, "얼굴 감지 시 로봇이 부를 이름입니다.")
+      ),
+      h(
+        "label",
+        { class: "settings-field" },
+        h("span", { class: "settings-label" }, "사용자 특징 / 역할"),
+        personDescInput,
+        h("p", { class: "settings-hint" }, "로봇에게 전달될 사용자의 외형적 특징이나 설명입니다.")
+      )
+    )
+  );
+
   const saveBtn = h("button", { type: "submit", class: "btn btn--primary" }, "비전 설정 저장");
   const status = h("p", { class: "settings-status", role: "status", "aria-live": "polite" });
 
@@ -252,6 +323,8 @@ function buildVisionSection() {
       h("span", { class: "settings-label" }, "입력 카메라 장치"),
       cameraSelect
     ),
+    previewCard,
+    personIdentitySection,
     h(
       "div",
       { class: "settings-vision-grid" },
@@ -329,6 +402,8 @@ function buildVisionSection() {
         face_detection_enabled: faceEnabledInput.checked,
         auto_gaze_enabled: autoGazeInput.checked,
         yolo_detection_enabled: yoloEnabledInput.checked,
+        registered_person_name: personNameInput.value.trim(),
+        registered_person_desc: personDescInput.value.trim(),
         min_face_confidence: Number.parseFloat(confSlider.value),
       });
       status.textContent = "비전 및 얼굴 인식 설정이 저장되었습니다.";
@@ -351,6 +426,8 @@ function buildVisionSection() {
           )
         );
       }
+      if (data.registered_person_name !== undefined) personNameInput.value = data.registered_person_name;
+      if (data.registered_person_desc !== undefined) personDescInput.value = data.registered_person_desc;
       if (data.face_detection_enabled !== undefined) faceEnabledInput.checked = Boolean(data.face_detection_enabled);
       if (data.auto_gaze_enabled !== undefined) autoGazeInput.checked = Boolean(data.auto_gaze_enabled);
       if (data.yolo_detection_enabled !== undefined) yoloEnabledInput.checked = Boolean(data.yolo_detection_enabled);
