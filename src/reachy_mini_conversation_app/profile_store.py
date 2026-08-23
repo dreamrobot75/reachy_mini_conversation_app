@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 PROFILE_FILENAME = "profile.md"
 PROFILE_SCHEMA_VERSION = 1
-DEFAULT_PROFILE_NAME = "default"
+DEFAULT_PROFILE_NAME = "desk_companion_ko"
 _FRONT_MATTER_DELIMITER = "+++"
 _PROFILE_METADATA_FIELDS = {"schema_version", "default_tools", "voice", "greeting", "hidden"}
 _STORE_LOCK = threading.Lock()

@@ -205,7 +205,7 @@ def _normalize_conversation_backend(value: str | None) -> str:
         return HF_BACKEND
     if candidate in {"hf", HF_BACKEND}:
         return HF_BACKEND
-    if candidate == OPENAI_BACKEND:
+    if candidate in {"openai", OPENAI_BACKEND}:
         return OPENAI_BACKEND
     logger.warning(
         "Invalid %s=%r. Expected hf or openai; using hf.",
@@ -216,9 +216,9 @@ def _normalize_conversation_backend(value: str | None) -> str:
 
 
 def _normalize_transcription_language(value: str | None) -> str:
-    """Return the configured realtime transcription language."""
+    """Return the configured realtime transcription language, defaulting to Korean ("ko")."""
     candidate = (value or "").strip()
-    return candidate or "en"
+    return candidate or "ko"
 
 
 @dataclass(frozen=True)
@@ -405,7 +405,9 @@ class Config:
     _tools_directory_env = os.getenv("REACHY_MINI_EXTERNAL_TOOLS_DIRECTORY")
     TOOLS_DIRECTORY = Path(_tools_directory_env) if _tools_directory_env else None
     AUTOLOAD_EXTERNAL_TOOLS = _env_flag("AUTOLOAD_EXTERNAL_TOOLS", default=False)
-    REACHY_MINI_CUSTOM_PROFILE = LOCKED_PROFILE or os.getenv("REACHY_MINI_CUSTOM_PROFILE")
+    REACHY_MINI_CUSTOM_PROFILE: str | None = (
+        LOCKED_PROFILE or (os.getenv("REACHY_MINI_CUSTOM_PROFILE") or "").strip() or "desk_companion_ko"
+    )
 
     logger.debug(f"Custom Profile: {REACHY_MINI_CUSTOM_PROFILE}")
 
@@ -513,16 +515,33 @@ def refresh_runtime_config_from_env() -> None:
     config.REACHY_MINI_STANDBY_ON_SLEEP = _env_flag("REACHY_MINI_STANDBY_ON_SLEEP", default=True)
     config.REACHY_MINI_WAKE_PHRASES = os.getenv("REACHY_MINI_WAKE_PHRASES")
     config.REACHY_MINI_DOA_LOOK = _env_flag("REACHY_MINI_DOA_LOOK", default=True)
-    config.REACHY_MINI_CUSTOM_PROFILE = LOCKED_PROFILE or os.getenv("REACHY_MINI_CUSTOM_PROFILE")
+    config.REACHY_MINI_CUSTOM_PROFILE = (
+        LOCKED_PROFILE or (os.getenv("REACHY_MINI_CUSTOM_PROFILE") or "").strip() or "desk_companion_ko"
+    )
 
 
 def get_available_voices() -> list[str]:
-    """Return the curated Hugging Face voice list."""
+    """Return the curated voice list for the active backend."""
+    if config.CONVERSATION_BACKEND == "openai":
+        return [
+            "alloy",
+            "ash",
+            "ballad",
+            "cedar",
+            "coral",
+            "echo",
+            "marin",
+            "sage",
+            "shimmer",
+            "verse",
+        ]
     return list(HF_AVAILABLE_VOICES)
 
 
 def get_default_voice() -> str:
-    """Return the default Hugging Face voice."""
+    """Return the default voice for the active backend."""
+    if config.CONVERSATION_BACKEND == "openai":
+        return config.OPENAI_VOICE or DEFAULT_OPENAI_VOICE
     return HF_DEFAULTS.voice
 
 

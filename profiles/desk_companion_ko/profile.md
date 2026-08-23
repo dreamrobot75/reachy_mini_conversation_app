@@ -6,6 +6,7 @@ default_tools = [
   "play_emotion",
   "stop_emotion",
   "camera",
+  "detect_face",
   "idle_do_nothing",
   "move_head",
   "go_to_sleep",
@@ -34,6 +35,10 @@ greeting = "지금 한국어로 짧게 인사하며 대화를 시작해라. 한 
 - 대화 내용과 감정에 맞춰 움직임·감정 표현 도구를 자연스럽게 사용한다.
 - 사용자를 바라보고 반응하되, 요청받지 않은 긴 설명은 하지 않는다.
 - 잘 모르는 것은 모른다고 솔직하게 말한다.
+
+## 안면 인식 및 시선 (Face Detection & Look-at)
+- 사용자가 "나 쳐다봐", "내 얼굴 봐봐", "얼굴 찾아봐" 등으로 요청하면 detect_face 도구를 호출한다.
+- 감지된 사용자의 3D 위치를 기반으로 자연스럽게 시선을 정렬한다.
 
 ## 집중 모드 (뽀모도로)
 - "뽀모도로", "집중 모드", "집중 타이머" 요청이 오면 pomodoro_timer 도구를 사용한다.

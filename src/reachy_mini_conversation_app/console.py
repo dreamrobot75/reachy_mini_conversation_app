@@ -547,18 +547,21 @@ class LocalStream:
             hf_ws_url = get_hf_direct_ws_url()
             hf_direct_host, hf_direct_port = parse_hf_direct_target(hf_ws_url)
             hf_connection_selection = get_hf_connection_selection()
+            is_openai = config.CONVERSATION_BACKEND == "openai"
+            has_openai_key = bool((config.OPENAI_API_KEY or "").strip())
             has_hf_connection = hf_connection_selection.has_target
             backend_connection = self._backend_connection_status()
+            can_proceed = has_openai_key if is_openai else has_hf_connection
             return {
-                "backend": HF_BACKEND,
-                "has_key": has_hf_connection,
+                "backend": config.CONVERSATION_BACKEND,
+                "has_key": has_openai_key if is_openai else has_hf_connection,
                 "has_hf_session_url": bool(hf_session_url),
                 "has_hf_ws_url": bool(hf_ws_url),
                 "has_hf_connection": has_hf_connection,
                 "hf_connection_mode": hf_connection_selection.mode,
                 "hf_direct_host": hf_direct_host,
                 "hf_direct_port": hf_direct_port,
-                "can_proceed": has_hf_connection,
+                "can_proceed": can_proceed,
                 "can_proceed_with_hf": has_hf_connection,
                 "requires_restart": not self._can_rebuild_handler(),
                 **backend_connection,
@@ -770,7 +773,7 @@ class LocalStream:
         self._init_settings_ui_if_needed()
 
         # If the Hugging Face target is still missing -> wait until provided via the settings UI
-        if not has_hf_realtime_target():
+        if config.CONVERSATION_BACKEND == HF_BACKEND and not has_hf_realtime_target():
             self._set_backend_connection_state("waiting_for_config", f"{HF_REALTIME_WS_URL_ENV} is not configured.")
             if self._settings_app is None:
                 logger.error(
