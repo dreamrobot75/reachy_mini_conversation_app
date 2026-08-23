@@ -8,6 +8,7 @@ import pytest
 
 from reachy_mini_conversation_app.config import config
 from reachy_mini_conversation_app.openai_realtime import (
+    DEFAULT_WAKE_PHRASES,
     OpenAIRealtimeHandler,
     matches_wake_phrase,
     configured_wake_phrases,
@@ -56,10 +57,19 @@ def test_wake_phrase_matches_loose_variants(transcript: str) -> None:
     assert matches_wake_phrase(transcript, ["깨어나", "리치미니", "일어나"]) is True
 
 
-@pytest.mark.parametrize("transcript", ["안녕하세요", "오늘 날씨 어때", "", "   "])
+@pytest.mark.parametrize(
+    "transcript",
+    ["리치야", "야, 리치!", "리치 미니야 안녕", "Reachy 일어나", "reachy?", "깨어나", "일어나 봐"],
+)
+def test_wake_phrase_matches_robot_name_with_defaults(transcript: str) -> None:
+    """Calling the robot by its name (리치/Reachy) must wake it with the default phrases."""
+    assert matches_wake_phrase(transcript, DEFAULT_WAKE_PHRASES) is True
+
+
+@pytest.mark.parametrize("transcript", ["안녕하세요", "오늘 날씨 어때", "", "   ", "스위치 켜 줘", "위치 알려 줘"])
 def test_wake_phrase_rejects_non_wake_text(transcript: str) -> None:
     """Unrelated or empty transcripts must not wake the robot."""
-    assert matches_wake_phrase(transcript, ["깨어나", "리치미니", "일어나"]) is False
+    assert matches_wake_phrase(transcript, DEFAULT_WAKE_PHRASES) is False
 
 
 def test_configured_wake_phrases_env_override(monkeypatch: Any) -> None:
@@ -68,7 +78,7 @@ def test_configured_wake_phrases_env_override(monkeypatch: Any) -> None:
     assert configured_wake_phrases() == ["굿모닝", "헬로"]
 
     monkeypatch.setattr(config, "REACHY_MINI_WAKE_PHRASES", "")
-    assert configured_wake_phrases() == ["깨어나", "리치미니", "일어나"]
+    assert configured_wake_phrases() == ["리치", "reachy", "깨어나", "일어나"]
 
 
 # --- standby state machine ----------------------------------------------------

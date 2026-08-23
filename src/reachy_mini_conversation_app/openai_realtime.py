@@ -61,7 +61,9 @@ FALLBACK_OUTPUT_SAMPLE_RATE: int = 16000
 _ANTI_ALIAS_KERNEL = np.array([0.25, 0.5, 0.25], dtype=np.float64)
 
 # Wake phrases matched against user transcripts while in standby.
-DEFAULT_WAKE_PHRASES: tuple[str, ...] = ("깨어나", "리치미니", "일어나")
+# The robot's name is "리치(Reachy)", so calling it by name also wakes it
+# ("리치" matches "리치미니"/"리치야" as well after normalization).
+DEFAULT_WAKE_PHRASES: tuple[str, ...] = ("리치", "reachy", "깨어나", "일어나")
 
 # Prompt queued after waking so the model opens the conversation itself.
 WAKE_GREETING_PROMPT = (
