@@ -54,11 +54,17 @@ class DetectFace(Tool):
             logger.warning("detect_face: Camera is disabled")
             return {"detected": False, "error": "Camera is disabled"}
 
-        if not hasattr(deps.reachy_mini, "media") or deps.reachy_mini.media is None:
-            logger.warning("detect_face: Media manager is unavailable")
-            return {"detected": False, "error": "Camera media is unavailable"}
+        frame_bgr = None
+        try:
+            from reachy_mini_conversation_app.camera_service import CameraService
 
-        frame_bgr = deps.reachy_mini.media.get_frame()
+            frame_bgr = CameraService.get_instance().get_frame_bgr()
+        except Exception:
+            frame_bgr = None
+
+        if frame_bgr is None and hasattr(deps.reachy_mini, "media") and deps.reachy_mini.media is not None:
+            frame_bgr = deps.reachy_mini.media.get_frame()
+
         if frame_bgr is None:
             logger.warning("detect_face: No frame available from camera")
             return {"detected": False, "error": "No frame available from camera"}

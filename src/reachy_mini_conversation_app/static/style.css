@@ -1647,19 +1647,33 @@ button {
   left: 12px;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 5px 12px;
-  background: rgba(15, 15, 18, 0.75);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  gap: 8px;
+  padding: 4px 12px;
+  background: rgba(15, 15, 18, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-radius: 999px;
   z-index: 3;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.talk__camera-select {
+  background: transparent;
   color: #f4f4f5;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  pointer-events: none;
+  border: none;
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  outline: none;
+}
+
+.talk__camera-select option {
+  background: #18181b;
+  color: #f4f4f5;
+  font-size: 0.85rem;
 }
 
 .talk__camera-live-dot {
@@ -1668,6 +1682,7 @@ button {
   border-radius: 50%;
   background: #ef4444;
   box-shadow: 0 0 8px #ef4444;
+  flex-shrink: 0;
   animation: live-pulse 1.8s ease-in-out infinite;
 }
 

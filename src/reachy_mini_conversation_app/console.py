@@ -39,6 +39,7 @@ from reachy_mini_conversation_app.config import (
 )
 from reachy_mini_conversation_app.prompts import get_session_voice, get_session_instructions
 from reachy_mini_conversation_app.streaming import AdditionalOutputs, audio_to_float32
+from reachy_mini_conversation_app.camera_service import CameraService
 from reachy_mini_conversation_app.startup_settings import read_startup_settings, write_startup_settings
 from reachy_mini_conversation_app.tools.core_tools import initialize_tools
 from reachy_mini_conversation_app.tool_space_routes import register_tool_space_methods
@@ -578,18 +579,29 @@ class LocalStream:
         def _favicon() -> Response:
             return Response(status_code=204)
 
+        camera_service = CameraService.get_instance()
+        camera_service.set_deps_provider(lambda: self.handler.deps if self.handler else None)
+
+        @settings_app.get("/api/camera/devices")
+        def _camera_devices() -> dict[str, object]:
+            """List available camera devices and the currently active device ID."""
+            return {
+                "devices": camera_service.list_devices(),
+                "active": camera_service.get_active_device_id(),
+            }
+
+        @settings_app.post("/api/camera/select")
+        def _camera_select(device: str = "auto") -> dict[str, object]:
+            """Select active camera device source."""
+            ok = camera_service.select_device(device)
+            return {"ok": ok, "active": camera_service.get_active_device_id()}
+
         @settings_app.get("/api/camera/frame")
         def _camera_frame() -> Response:
             """Return the latest camera frame as a single JPEG image."""
-            try:
-                if self.handler and getattr(self.handler, "deps", None):
-                    media = getattr(self.handler.deps.reachy_mini, "media", None)
-                    if media and getattr(self.handler.deps, "camera_enabled", True):
-                        frame_bytes = media.get_frame_jpeg()
-                        if frame_bytes:
-                            return Response(content=frame_bytes, media_type="image/jpeg")
-            except Exception as e:
-                logger.debug("Failed to fetch camera frame: %s", e)
+            frame_bytes = camera_service.get_frame_jpeg()
+            if frame_bytes:
+                return Response(content=frame_bytes, media_type="image/jpeg")
             return Response(status_code=204)
 
         @settings_app.get("/api/camera/stream")
@@ -599,11 +611,7 @@ class LocalStream:
             async def _stream_frames() -> AsyncIterator[bytes]:
                 while True:
                     try:
-                        frame_bytes = None
-                        if self.handler and getattr(self.handler, "deps", None):
-                            media = getattr(self.handler.deps.reachy_mini, "media", None)
-                            if media and getattr(self.handler.deps, "camera_enabled", True):
-                                frame_bytes = media.get_frame_jpeg()
+                        frame_bytes = camera_service.get_frame_jpeg()
                         if frame_bytes:
                             yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n")
                         await asyncio.sleep(0.06)  # ~15 FPS

@@ -66,15 +66,56 @@ export async function mountTalkView({ outlet, signal }) {
     }, 2500);
   });
 
+  const cameraSelect = h("select", {
+    class: "talk__camera-select",
+    "aria-label": "Select camera source",
+  });
+
+  const cameraSelectWrap = h(
+    "div",
+    { class: "talk__camera-header" },
+    h("span", { class: "talk__camera-live-dot" }),
+    cameraSelect
+  );
+
+  async function loadCameraDevices() {
+    try {
+      const res = await fetch("/api/camera/devices");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data?.devices || signal.aborted) return;
+      cameraSelect.replaceChildren(
+        ...data.devices.map((d) =>
+          h(
+            "option",
+            { value: d.id, selected: d.id === data.active },
+            d.name
+          )
+        )
+      );
+    } catch (e) {
+      console.debug("Failed loading camera devices", e);
+    }
+  }
+
+  cameraSelect.addEventListener("change", async (e) => {
+    const selectedId = e.target.value;
+    try {
+      await fetch(`/api/camera/select?device=${encodeURIComponent(selectedId)}`, {
+        method: "POST",
+      });
+      cameraImg.src = `/api/camera/stream?t=${Date.now()}`;
+    } catch (err) {
+      console.warn("Failed selecting camera", err);
+    }
+  });
+
+  void loadCameraDevices();
+
   const cameraCard = h(
     "div",
     { class: "talk__camera-card" },
-    h(
-      "div",
-      { class: "talk__camera-header" },
-      h("span", { class: "talk__camera-live-dot" }),
-      h("span", { class: "talk__camera-title" }, "CAMERA FEED")
-    ),
+    cameraSelectWrap,
     h("div", { class: "talk__camera-frame-wrap" }, cameraImg)
   );
 
