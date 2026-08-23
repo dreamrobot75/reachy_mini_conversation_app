@@ -216,6 +216,64 @@ async def test_parallel_tool_calls_trigger_single_response(monkeypatch: Any) -> 
     assert create.await_count == 1
 
 
+@pytest.mark.asyncio
+async def test_detached_tool_result_is_announced_via_message() -> None:
+    """A detached countdown result is injected as a plain message, never as function_call_output."""
+    from reachy_mini_conversation_app.tools.tool_constants import DETACHED_CALL_ID_PREFIX
+
+    handler = HuggingFaceRealtimeHandler(ToolDependencies(reachy_mini=MagicMock(), movement_manager=MagicMock()))
+    created: list[dict[str, Any]] = []
+    connection = MagicMock()
+    connection.conversation.item.create = AsyncMock(side_effect=lambda **kw: created.append(kw))
+    handler.connection = connection
+    handler._safe_response_create = AsyncMock()  # type: ignore[method-assign]
+
+    await handler._handle_tool_result(
+        ToolNotification(
+            id=f"{DETACHED_CALL_ID_PREFIX}abc",
+            tool_name="pomodoro_timer",
+            is_idle_tool_call=False,
+            status=ToolState.COMPLETED,
+            result={
+                "status": "focus_complete",
+                "announce": "집중 시간 1분이 끝났어요! 10분간 가볍게 스트레칭하세요.",
+                "next_action": "announce를 그대로 말하라.",
+            },
+        )
+    )
+
+    assert all(kw["item"]["type"] != "function_call_output" for kw in created)
+    messages = [kw for kw in created if kw["item"]["type"] == "message"]
+    assert messages, "detached result must be injected as a message item"
+    assert "집중 시간 1분이 끝났어요" in messages[0]["item"]["content"][0]["text"]
+    handler._safe_response_create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_detached_cancelled_result_stays_silent() -> None:
+    """A cancelled detached countdown must not produce any announcement."""
+    from reachy_mini_conversation_app.tools.tool_constants import DETACHED_CALL_ID_PREFIX
+
+    handler = HuggingFaceRealtimeHandler(ToolDependencies(reachy_mini=MagicMock(), movement_manager=MagicMock()))
+    connection = MagicMock()
+    connection.conversation.item.create = AsyncMock()
+    handler.connection = connection
+    handler._safe_response_create = AsyncMock()  # type: ignore[method-assign]
+
+    await handler._handle_tool_result(
+        ToolNotification(
+            id=f"{DETACHED_CALL_ID_PREFIX}abc",
+            tool_name="pomodoro_timer",
+            is_idle_tool_call=False,
+            status=ToolState.CANCELLED,
+            error="Tool cancelled",
+        )
+    )
+
+    connection.conversation.item.create.assert_not_awaited()
+    handler._safe_response_create.assert_not_awaited()
+
+
 def test_camera_tool_result_carries_freshness_note() -> None:
     """The camera result sent to the model must mark earlier images as outdated."""
     sanitized = HuggingFaceRealtimeHandler._sanitize_tool_result_for_model("camera", {"b64_im": "abc"})

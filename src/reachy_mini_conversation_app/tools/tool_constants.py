@@ -15,3 +15,9 @@ class SystemTool(Enum):
 
     TASK_STATUS = "task_status"
     TASK_CANCEL = "task_cancel"
+
+
+# Call-id prefix for detached background work spawned by a tool (not by a model
+# function call). Results with this prefix must never be sent back as
+# function_call_output; the realtime handler announces them via a plain message.
+DETACHED_CALL_ID_PREFIX = "detached::"

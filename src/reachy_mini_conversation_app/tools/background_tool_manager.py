@@ -15,6 +15,7 @@ from pydantic import Field, BaseModel, PrivateAttr
 
 from reachy_mini_conversation_app.tools.core_tools import (
     ToolDependencies,
+    get_tools,
     dispatch_tool_call,
     dispatch_tool_call_with_manager,
 )
@@ -44,8 +45,12 @@ class ToolCallRoutine(BaseModel):
 
     async def __call__(self, tool_manager: BackgroundToolManager) -> Any:
         """Execute the stored callable with its arguments."""
-        if self.tool_name in _SYSTEM_TOOL_NAMES:
-            # For safety purposes, we only allow system tools to be called with the tool manager
+        # Only system tools and tools that explicitly opt in (needs_tool_manager)
+        # receive the tool manager, so arbitrary tools cannot control other tasks.
+        needs_manager = self.tool_name in _SYSTEM_TOOL_NAMES or getattr(
+            get_tools().get(self.tool_name), "needs_tool_manager", False
+        )
+        if needs_manager:
             return await dispatch_tool_call_with_manager(
                 tool_name=self.tool_name, args_json=self.args_json_str, deps=self.deps, tool_manager=tool_manager
             )

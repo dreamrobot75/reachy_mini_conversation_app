@@ -64,10 +64,12 @@ class Tool(abc.ABC):
 
     Tools may override:
       - needs_response: bool = True  # set False to skip the spoken follow-up after this tool runs
+      - needs_tool_manager: bool = False  # set True to receive tool_manager for spawning background work
     """
 
     _auto_register: ClassVar[bool] = True
     needs_response: ClassVar[bool] = True
+    needs_tool_manager: ClassVar[bool] = False
 
     name: str
     description: str

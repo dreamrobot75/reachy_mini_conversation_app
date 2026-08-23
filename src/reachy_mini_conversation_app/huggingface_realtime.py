@@ -49,6 +49,7 @@ from reachy_mini_conversation_app.tools.core_tools import (
     get_tool_specs,
 )
 from reachy_mini_conversation_app.conversation_handler import ConversationHandler
+from reachy_mini_conversation_app.tools.tool_constants import DETACHED_CALL_ID_PREFIX, ToolState
 from reachy_mini_conversation_app.tools.background_tool_manager import (
     ToolCallRoutine,
     ToolNotification,
@@ -607,6 +608,12 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
             )
             return
 
+        # Detached background work (spawned by a tool, not by a model function
+        # call): there is no real call_id to answer with function_call_output.
+        if isinstance(completed_tool.id, str) and completed_tool.id.startswith(DETACHED_CALL_ID_PREFIX):
+            await self._handle_detached_tool_result(completed_tool, tool_result_for_model)
+            return
+
         try:
             send_result_to_model = not completed_tool.is_idle_tool_call
             if send_result_to_model:
@@ -697,6 +704,41 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
 
         except ConnectionClosedError:
             logger.warning("Connection closed while sending tool result")
+            self.connection = None
+            self._response_done_event.set()
+
+    async def _handle_detached_tool_result(
+        self,
+        completed_tool: ToolNotification,
+        tool_result_for_model: Any,
+    ) -> None:
+        """Announce detached background work via a plain message item.
+
+        Cancelled work stays silent — the cancelling task_cancel call already
+        produced its own spoken response.
+        """
+        if completed_tool.status == ToolState.CANCELLED:
+            logger.info("Detached background task '%s' cancelled; staying silent", completed_tool.tool_name)
+            return
+
+        self._mark_activity("tool_result_ready")
+        await self.output_queue.put(
+            AdditionalOutputs({"role": "assistant", "content": json.dumps(tool_result_for_model)}),
+        )
+        if not self.connection:
+            return
+        text = (
+            f"(시스템 알림 — 백그라운드 작업 '{completed_tool.tool_name}' 종료: "
+            f"{json.dumps(tool_result_for_model, ensure_ascii=False)}) "
+            "결과의 next_action 지시를 그대로 따르라."
+        )
+        try:
+            await self.connection.conversation.item.create(
+                item={"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]},
+            )
+            await self._safe_response_create()
+        except ConnectionClosedError:
+            logger.warning("Connection closed while announcing detached tool result")
             self.connection = None
             self._response_done_event.set()
 
