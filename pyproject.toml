@@ -21,6 +21,7 @@ dependencies = [
     "reachy-mini>=1.10.0rc2",
     "mcp>=1.27.1",
     "opencv-python>=5.0.0.93",
+    "ultralytics>=8.4.120",
 ]
 
 [dependency-groups]
