@@ -46,6 +46,10 @@ coverage.xml
 *.pem
 *.crt
 *.csr
+credentials.json
+google_credentials.json
+client_secret.json
+.google_token.json
 
 # Temporary files
 tmp/
@@ -71,3 +75,7 @@ external_content/external_tools/*
 external_content/user_personalities/
 external_content/installed_tool_spaces.json
 external_content/profile_toolsets.json
+src/reachy_mini_conversation_app/startup_settings.json
+src/reachy_mini_conversation_app/profile_toolsets.json
+reachymini_console.bat
+src/reachy_mini_conversation_app/memory.*.json

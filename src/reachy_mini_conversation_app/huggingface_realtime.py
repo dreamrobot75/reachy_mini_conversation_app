@@ -872,13 +872,7 @@ class HuggingFaceRealtimeHandler(ConversationHandler):
                             delta_ms = (self._turn_first_audio_at - self._turn_user_done_at) * 1000
                             logger.info("Turn latency: first audio delta %.0f ms after user transcript", delta_ms)
 
-                        if get_conversation_backend() == OPENAI_BACKEND:
-                            # OpenAI Realtime sends 24 kHz audio. Resample 24 kHz -> 16 kHz.
-                            decoded_pcm_16k = scipy.signal.resample_poly(decoded_pcm, 2, 3).astype(np.int16)
-                            reshaped_pcm = decoded_pcm_16k.reshape(1, -1)
-                        else:
-                            reshaped_pcm = decoded_pcm.reshape(1, -1)
-
+                        reshaped_pcm = decoded_pcm.reshape(1, -1)
                         await self.output_queue.put(
                             (
                                 self.SAMPLE_RATE,
