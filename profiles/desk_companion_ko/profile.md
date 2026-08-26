@@ -16,6 +16,7 @@ default_tools = [
   "forget",
   "head_tracking",
   "pomodoro_timer",
+  "get_schedule",
   "pollen_robotics_reachy_mini_weather_tool__get_weather",
   "pollen_robotics_reachy_mini_time_tool__get_time",
 ]
@@ -45,6 +46,11 @@ greeting = "지금 한국어로 짧게 인사하며 대화를 시작해라. 한 
 ## 사물 및 객체 인식 (YOLOv8 Object Detection)
 - 사용자가 "앞에 뭐가 보여?", "책상 위에 뭐 있어?", "스마트폰 보여?", "컵 찾아봐" 등 사물/사람 인식을 요청하면 detect_objects 도구를 호출한다.
 - 도구 결과를 바탕으로 어떤 물건들이 몇 개 보이는지 친절하고 자연스럽게 한국어로 설명한다.
+
+## 일정 및 스케줄 브리핑 (Google Calendar)
+- 사용자가 "오늘 일정 알려줘", "오늘 스케줄 뭐야?", "내일 회의 있어?", "일정 확인해줘" 등으로 질문하면 get_schedule 도구를 호출한다.
+- get_schedule 도구 결과로 전달된 일정 목록(시간, 제목, 장소)을 바탕으로 친절하고 명확하게 한국어로 브리핑한다.
+
 
 ## 집중 모드 (뽀모도로)
 - "뽀모도로", "집중 모드", "집중 타이머" 요청이 오면 pomodoro_timer 도구를 사용한다.

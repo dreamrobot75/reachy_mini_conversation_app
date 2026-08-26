@@ -197,6 +197,19 @@ Copy `.env.example` to `.env` when you want to point Hugging Face at your own lo
 | `HF_REALTIME_WS_URL` | Direct websocket endpoint for your own Hugging Face backend. Accepts either a base URL like `ws://127.0.0.1:8765/v1` or the full websocket URL `ws://127.0.0.1:8765/v1/realtime`. Used when `HF_REALTIME_CONNECTION_MODE=local`. |
 | `HF_TOKEN` | Optional token for Hugging Face access. Local endpoints receive only this explicitly configured token. |
 | `REACHY_MINI_APP_TIMEOUT_MINUTES` | Minutes of inactivity before Reachy goes to sleep. Defaults to `1440` (one day); set to `0` to disable. |
+| `GOOGLE_OAUTH_CLIENT_ID` | Server-managed Google OAuth client ID used for Calendar browser login. |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | Server-managed Google OAuth client secret. Never entered or exposed in the Settings UI. |
+
+### Google Calendar OAuth
+
+Create a web application OAuth 2.0 client in Google Cloud Console and enable the Google Calendar API. Register `http://localhost:7860/api/calendar/oauth2callback` as an authorized redirect URI, then set the client credentials in `.env`:
+
+```env
+GOOGLE_OAUTH_CLIENT_ID=xxxxx.apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxx
+```
+
+Restart the app, open `http://localhost:7860/#/settings`, and click **Google 계정 로그인 (OAuth 연동)**. The browser handles account selection and consent; end users never enter the OAuth client secret in the UI. After consent, the window closes, the status changes to **Google 계정 연동됨 (OAuth Active)**, and today's events appear in Settings. Existing `credentials.json`, `google_credentials.json`, and `client_secret.json` files remain supported as server-side alternatives.
 
 ### Hugging Face Connection Modes
 

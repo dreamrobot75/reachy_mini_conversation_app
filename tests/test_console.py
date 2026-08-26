@@ -150,6 +150,43 @@ def test_settings_ui_detaches_framework_catch_all_before_own_routes() -> None:
     assert _rpc_call(app, "conversation.status")["result"]["backend"]
 
 
+def test_calendar_credentials_are_not_accepted_from_browser() -> None:
+    """OAuth client secrets must remain server-managed."""
+    app = FastAPI()
+    robot = SimpleNamespace(media=SimpleNamespace(audio=None, backend=None))
+    stream = LocalStream(MagicMock(), robot, settings_app=app)
+    stream._init_settings_ui_if_needed()
+
+    response = TestClient(app).post(
+        "/api/calendar/save-credentials",
+        json={"client_id": "browser-client", "client_secret": "browser-secret"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_calendar_oauth_callback_forwards_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The OAuth callback must forward Google's state to the pending flow."""
+    calendar_service = MagicMock()
+    calendar_service.exchange_code.return_value = True
+    monkeypatch.setattr(
+        "reachy_mini_conversation_app.calendar_service.GoogleCalendarService.get_instance",
+        lambda: calendar_service,
+    )
+    app = FastAPI()
+    robot = SimpleNamespace(media=SimpleNamespace(audio=None, backend=None))
+    stream = LocalStream(MagicMock(), robot, settings_app=app)
+    stream._init_settings_ui_if_needed()
+
+    response = TestClient(app).get(
+        "/api/calendar/oauth2callback",
+        params={"code": "authorization-code", "state": "oauth-state"},
+    )
+
+    assert response.status_code == 200
+    calendar_service.exchange_code.assert_called_once_with("authorization-code", "oauth-state")
+
+
 @pytest.mark.asyncio
 async def test_activity_from_rebuilt_handler_reaches_rpc_clients() -> None:
     """Activity from a rebuilt handler must still reach /rpc subscribers."""

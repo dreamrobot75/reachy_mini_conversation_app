@@ -178,6 +178,40 @@ export const testFaceDetection = async () => {
   return res.json();
 };
 
+export const getCalendarStatus = async () => {
+  const res = await fetch("/api/calendar/status");
+  if (!res.ok) throw new Error("Failed to fetch calendar status");
+  return res.json();
+};
+
+export const getCalendarAuthUrl = async () => {
+  const res = await fetch("/api/calendar/auth-url");
+  if (!res.ok) throw new Error("Failed to fetch Google auth URL");
+  return res.json();
+};
+
+export const setCalendarToken = async (payload) => {
+  const res = await fetch("/api/calendar/set-token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed saving Google token");
+  return res.json();
+};
+
+export const logoutCalendar = async () => {
+  const res = await fetch("/api/calendar/logout", { method: "POST" });
+  if (!res.ok) throw new Error("Failed logging out of Google Calendar");
+  return res.json();
+};
+
+export const getCalendarEvents = async () => {
+  const res = await fetch("/api/calendar/events");
+  if (!res.ok) throw new Error("Failed to fetch calendar events");
+  return res.json();
+};
+
 /** Backend error codes that need friendlier copy than the raw code. */
 const ERROR_MESSAGES = Object.freeze({
   invalid_backend: "Unknown backend selected.",
