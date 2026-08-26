@@ -2,13 +2,12 @@
 
 import os
 import docx
-from docx.shared import Pt, RGBColor
+from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 
 def clear_cell_and_set_text(cell, text, font_size_pt=9.5, bold=False, align=WD_ALIGN_PARAGRAPH.LEFT, line_spacing=1.15):
     """Clear all existing paragraphs in cell and set new formatted text."""
-    # 1. Clear first paragraph
     p = cell.paragraphs[0]
     p.text = ""
     p.alignment = align
@@ -16,12 +15,10 @@ def clear_cell_and_set_text(cell, text, font_size_pt=9.5, bold=False, align=WD_A
     p.paragraph_format.space_before = Pt(2)
     p.paragraph_format.space_after = Pt(2)
 
-    # 2. Remove all subsequent paragraphs from the template cell
     for extra_p in list(cell.paragraphs[1:]):
         p_elm = extra_p._p
         p_elm.getparent().remove(p_elm)
 
-    # 3. Add lines
     lines = text.split("\n")
     for i, line in enumerate(lines):
         if i == 0:
@@ -75,8 +72,13 @@ def populate_confirmation_form(src_path, dst_path):
                     r.font.size = Pt(11)
                     r.bold = True
 
-    doc.save(dst_path)
-    print(f"Saved: {dst_path}")
+    try:
+        doc.save(dst_path)
+        print(f"Saved: {dst_path}")
+    except PermissionError:
+        alt_path = dst_path.replace(".docx", "_새로저장.docx")
+        doc.save(alt_path)
+        print(f"File was locked by Word. Saved to alternative path: {alt_path}")
 
 
 def populate_result_report(src_path, dst_path):
@@ -155,33 +157,19 @@ def populate_result_report(src_path, dst_path):
         "• Interaction Core: OpenAIRealtimeHandler 기반 WebSocket 양방향 오디오 스트리밍, 24kHz 리샘플링, Server VAD 발화 감지.\n"
         "• Kinematics & Motion Layer: 6-DOF 스튜어트 플랫폼 IK 연산, MovementManager 가감속 궤적 큐, 2-DOF 안테나 감정 표현기.\n"
         "• Tools & State Machine: detect_face, detect_objects, get_schedule, pomodoro_timer, dance_moves, go_to_sleep 도구 체계 및 슬립 <-> 대기 순환 상태 머신.\n"
-        "• Presentation Layer: HTML5/Vanilla CSS/WebSocket JSON-RPC 기반 실시간 대화 웹 대시보드(Port 7860) & MJPEG 비전 스트리밍.\n\n"
-        "[5계층 상호작용 아키텍처 다이어그램]\n"
-        "[사용자 음성 / 시각 / 환경 정보]\n"
-        "      │ (오디오/비전 입력)\n"
-        "      ▼\n"
-        "┌────────────────────────────────────────────────────────┐\n"
-        "│                Reachy Mini Robot Daemon                │\n"
-        "│   • XVF3800 DoA 음원 방향 추적   • GStreamer 미디어      │\n"
-        "│   • 6-DOF Stewart 기구학         • 2-DOF 안테나 제스처    │\n"
-        "└────────────────────────────────────────────────────────┘\n"
-        "      ▲ (REST / WebSocket IPC 통신)\n"
-        "      ▼\n"
-        "┌────────────────────────────────────────────────────────┐\n"
-        "│         DeskMate Conversation Core Application         │\n"
-        "│  • OpenAIRealtimeHandler (24kHz 실시간 오디오/Server VAD)│\n"
-        "│  • Face3DDetector (YuNet ONNX) & YOLOv8 사물 감지      │\n"
-        "│  • Google Calendar OAuth & 5대 기본 스케줄 서비스       │\n"
-        "│  • Pomodoro 타이머 및 생산성 도구셋                      │\n"
-        "│  • Standby / Wake Loop (호출어: '리치야', '일어나')       │\n"
-        "└────────────────────────────────────────────────────────┘\n"
-        "      ▲ (WebSocket JSON-RPC)\n"
-        "      ▼\n"
-        "┌────────────────────────────────────────────────────────┐\n"
-        "│     Web Dashboard (Port 7860) & MuJoCo 3D Simulator    │\n"
-        "└────────────────────────────────────────────────────────┘"
+        "• Presentation Layer: HTML5/Vanilla CSS/WebSocket JSON-RPC 기반 실시간 대화 웹 대시보드(Port 7860) & MJPEG 비전 스트리밍 & MuJoCo 3D 물리 시뮬레이터."
     )
     clear_cell_and_set_text(t_main.rows[8].cells[1], arch_text, font_size_pt=8.8)
+
+    # Insert Architecture Diagram Image in Row 8
+    arch_img_path = os.path.join(os.path.dirname(dst_path), "assets", "architecture_diagram.png")
+    if os.path.exists(arch_img_path):
+        p_img = t_main.rows[8].cells[1].add_paragraph()
+        p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_img.paragraph_format.space_before = Pt(6)
+        p_img.paragraph_format.space_after = Pt(4)
+        run_img = p_img.add_run()
+        run_img.add_picture(arch_img_path, width=Inches(5.6))
 
     # Row 9: 프로젝트 주요기능
     features_text = (
@@ -320,8 +308,13 @@ def populate_result_report(src_path, dst_path):
     )
     clear_cell_and_set_text(t_ai.rows[11].cells[1], ai_assist_text, font_size_pt=9.0)
 
-    doc.save(dst_path)
-    print(f"Saved: {dst_path}")
+    try:
+        doc.save(dst_path)
+        print(f"Saved: {dst_path}")
+    except PermissionError:
+        alt_path = dst_path.replace(".docx", "_새로저장.docx")
+        doc.save(alt_path)
+        print(f"File was locked by Word. Saved to alternative path: {alt_path}")
 
 
 def main():
