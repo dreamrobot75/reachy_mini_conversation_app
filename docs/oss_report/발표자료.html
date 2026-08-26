@@ -1126,6 +1126,17 @@
     }
   }, { passive: true });
 
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.has('slide')) {
+    const s = parseInt(urlParams.get('slide'), 10);
+    if (!isNaN(s)) currentSlide = Math.max(0, Math.min(s, totalSlides - 1));
+  }
+  if (urlParams.get('capture') === 'true') {
+    const style = document.createElement('style');
+    style.textContent = '* { transition: none !important; animation: none !important; }';
+    document.head.appendChild(style);
+  }
+
   updateSlideView();
 </script>
 </body>
