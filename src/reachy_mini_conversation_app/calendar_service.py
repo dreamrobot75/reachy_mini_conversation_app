@@ -1,20 +1,63 @@
 """Google Calendar OAuth service and event fetching."""
 
+import os
 import logging
 import datetime
 from typing import Any, Optional
 from pathlib import Path
 
+from google_auth_oauthlib.flow import InstalledAppFlow
+
 
 logger = logging.getLogger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+GOOGLE_OAUTH_CLIENT_ID_ENV = "GOOGLE_OAUTH_CLIENT_ID"
+GOOGLE_OAUTH_CLIENT_SECRET_ENV = "GOOGLE_OAUTH_CLIENT_SECRET"
 CREDENTIALS_PATHS = [
     Path("credentials.json"),
     Path("google_credentials.json"),
     Path("client_secret.json"),
 ]
 TOKEN_PATH = Path(".google_token.json")
+
+DEFAULT_SCHEDULE_EVENTS: list[dict[str, str]] = [
+    {
+        "summary": "팀 데일리 스크럼",
+        "start_time": "10:00",
+        "end_time": "10:30",
+        "location": "온라인 (Google Meet)",
+        "description": "어제 진행 상황 공유, 오늘 목표 설정 및 블로커 점검",
+    },
+    {
+        "summary": "Reachy Mini AI 대화 모델 기술 리뷰",
+        "start_time": "13:30",
+        "end_time": "14:30",
+        "location": "회의실 A",
+        "description": "실시간 음성 대화 지연시간 개선 및 신규 도구(Tool) 동작 데모",
+    },
+    {
+        "summary": "신규 인터랙션 기획 브레인스토밍",
+        "start_time": "15:00",
+        "end_time": "16:00",
+        "location": "라운지",
+        "description": "로봇 감정 표현 및 제스처 동작 추가 아이디어 회의",
+    },
+    {
+        "summary": "리치 미니와 함께하는 스트레칭 & 티타임",
+        "start_time": "16:30",
+        "end_time": "17:00",
+        "location": "휴게실",
+        "description": "뽀모도로 타이머 휴식 및 가벼운 대화 시간",
+    },
+    {
+        "summary": "오픈소스 출품 보고서 작성 및 최종 점검",
+        "start_time": "18:00",
+        "end_time": "19:00",
+        "location": "연구실",
+        "description": "중복수혜 확인서 및 프로젝트 산출물 문서 마무리",
+    },
+]
 
 
 class GoogleCalendarService:
@@ -25,6 +68,7 @@ class GoogleCalendarService:
     def __init__(self) -> None:
         """Initialize GoogleCalendarService instance."""
         self._service: Any = None
+        self._pending_flow: tuple[str, InstalledAppFlow] | None = None
 
     @classmethod
     def get_instance(cls) -> "GoogleCalendarService":
@@ -39,27 +83,7 @@ class GoogleCalendarService:
 
     def has_credentials(self) -> bool:
         """Check if client credentials JSON exists."""
-        return self._get_credentials_path() is not None
-
-    def save_client_credentials(self, client_id: str, client_secret: str) -> None:
-        """Save Client ID and Client Secret into credentials.json."""
-        import json
-
-        data = {
-            "installed": {
-                "client_id": client_id,
-                "project_id": "reachy-mini-app",
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                "client_secret": client_secret,
-                "redirect_uris": [
-                    "http://localhost",
-                    "http://localhost:7860/api/calendar/oauth2callback",
-                ],
-            }
-        }
-        Path("credentials.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
+        return self._get_credentials_path() is not None or self._get_environment_credentials() is not None
 
     def _get_credentials_path(self) -> Optional[Path]:
         """Find existing credentials file."""
@@ -68,42 +92,67 @@ class GoogleCalendarService:
                 return p
         return None
 
+    def _get_environment_credentials(self) -> tuple[str, str] | None:
+        """Return server-managed Google OAuth credentials when configured."""
+        client_id = (os.getenv(GOOGLE_OAUTH_CLIENT_ID_ENV) or "").strip()
+        client_secret = (os.getenv(GOOGLE_OAUTH_CLIENT_SECRET_ENV) or "").strip()
+        if client_id and client_secret:
+            return client_id, client_secret
+        return None
+
     def get_auth_url(
         self, redirect_uri: str = "http://localhost:7860/api/calendar/oauth2callback"
     ) -> tuple[Optional[str], Optional[str]]:
         """Generate OAuth 2.0 authorization URL for browser flow."""
-        cred_file = self._get_credentials_path()
-        if cred_file is None:
-            return None, "credentials.json 파일이 필요합니다. Client ID와 Secret을 먼저 입력해 주세요."
+        credentials_path = self._get_credentials_path()
+        environment_credentials = self._get_environment_credentials()
+        if credentials_path is None and environment_credentials is None:
+            return (
+                None,
+                "서버에 Google OAuth 설정이 없습니다. GOOGLE_OAUTH_CLIENT_ID와 GOOGLE_OAUTH_CLIENT_SECRET을 설정해 주세요.",
+            )
         try:
-            import importlib
-
-            flow_mod = importlib.import_module("google_auth_oauthlib.flow")
-            installed_flow_cls = getattr(flow_mod, "InstalledAppFlow")
-            flow = installed_flow_cls.from_client_secrets_file(str(cred_file), SCOPES, redirect_uri=redirect_uri)
-            auth_url, _ = flow.authorization_url(
+            if credentials_path is not None:
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    str(credentials_path),
+                    SCOPES,
+                    redirect_uri=redirect_uri,
+                )
+            else:
+                assert environment_credentials is not None
+                client_id, client_secret = environment_credentials
+                flow = InstalledAppFlow.from_client_config(
+                    {
+                        "web": {
+                            "client_id": client_id,
+                            "client_secret": client_secret,
+                            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                            "token_uri": "https://oauth2.googleapis.com/token",
+                            "redirect_uris": [redirect_uri],
+                        }
+                    },
+                    SCOPES,
+                    redirect_uri=redirect_uri,
+                )
+            auth_url, state = flow.authorization_url(
                 access_type="offline",
                 include_granted_scopes="true",
                 prompt="consent",
             )
+            self._pending_flow = state, flow
             return str(auth_url), None
         except Exception as e:
             logger.error("Failed generating OAuth URL: %s", e)
             return None, str(e)
 
-    def exchange_code(
-        self, code: str, redirect_uri: str = "http://localhost:7860/api/calendar/oauth2callback"
-    ) -> bool:
+    def exchange_code(self, code: str, state: str) -> bool:
         """Exchange authorization code for token and persist."""
-        cred_file = self._get_credentials_path()
-        if cred_file is None:
+        if self._pending_flow is None or self._pending_flow[0] != state:
+            logger.warning("Rejected Google OAuth callback with unknown state")
             return False
+        _, flow = self._pending_flow
+        self._pending_flow = None
         try:
-            import importlib
-
-            flow_mod = importlib.import_module("google_auth_oauthlib.flow")
-            installed_flow_cls = getattr(flow_mod, "InstalledAppFlow")
-            flow = installed_flow_cls.from_client_secrets_file(str(cred_file), SCOPES, redirect_uri=redirect_uri)
             flow.fetch_token(code=code)
             creds = flow.credentials
             TOKEN_PATH.write_text(creds.to_json(), encoding="utf-8")
@@ -182,13 +231,28 @@ class GoogleCalendarService:
                 logger.warning("Failed reading token file: %s", e)
         return None
 
+    def get_default_events(self, query_date: datetime.date) -> list[dict[str, str]]:
+        """Return fixed default schedule events for the specified date."""
+        events: list[dict[str, str]] = []
+        for item in DEFAULT_SCHEDULE_EVENTS:
+            events.append(
+                {
+                    "summary": item["summary"],
+                    "start": f"{query_date.isoformat()}T{item['start_time']}:00+09:00",
+                    "end": f"{query_date.isoformat()}T{item['end_time']}:00+09:00",
+                    "location": item["location"],
+                    "description": item["description"],
+                }
+            )
+        return events
+
     def get_events(
         self,
         target_date: str = "today",
         calendar_id: str = "primary",
         max_results: int = 10,
     ) -> dict[str, Any]:
-        """Fetch calendar events for the specified date."""
+        """Fetch calendar events for the specified date, falling back to default schedules."""
         today = datetime.date.today()
         if target_date.lower() == "today":
             query_date = today
@@ -210,12 +274,19 @@ class GoogleCalendarService:
                 token = str(creds.token)
 
         if not token:
+            default_events = self.get_default_events(query_date)[:max_results]
+            date_str = "오늘" if query_date == today else f"{query_date.month}월 {query_date.day}일"
+            event_summaries = [
+                f"{e['summary']} ({e['start'][11:16] if 'T' in e['start'] else '종일'})" for e in default_events
+            ]
+            msg = f"{date_str} 총 {len(default_events)}건의 일정이 있습니다: {', '.join(event_summaries)}"
             return {
                 "authenticated": False,
+                "is_default": True,
                 "date": query_date.isoformat(),
-                "event_count": 0,
-                "events": [],
-                "message": "구글 캘린더 OAuth 인증이 필요합니다. Settings 화면에서 'Google 계정 로그인' 버튼을 눌러 연동해 주세요.",
+                "event_count": len(default_events),
+                "events": default_events,
+                "message": msg,
             }
 
         try:
@@ -235,12 +306,19 @@ class GoogleCalendarService:
             if resp.status_code == 401:
                 # Token expired
                 self.logout()
+                default_events = self.get_default_events(query_date)[:max_results]
+                date_str = "오늘" if query_date == today else f"{query_date.month}월 {query_date.day}일"
+                event_summaries = [
+                    f"{e['summary']} ({e['start'][11:16] if 'T' in e['start'] else '종일'})" for e in default_events
+                ]
+                msg = f"{date_str} 총 {len(default_events)}건의 일정이 있습니다: {', '.join(event_summaries)}"
                 return {
                     "authenticated": False,
+                    "is_default": True,
                     "date": query_date.isoformat(),
-                    "event_count": 0,
-                    "events": [],
-                    "message": "구글 인증 토큰이 만료되었습니다. Settings 화면에서 다시 로그인해 주세요.",
+                    "event_count": len(default_events),
+                    "events": default_events,
+                    "message": msg,
                 }
 
             resp.raise_for_status()
@@ -278,11 +356,18 @@ class GoogleCalendarService:
             }
         except Exception as e:
             logger.error("Failed fetching calendar events: %s", e)
+            default_events = self.get_default_events(query_date)[:max_results]
+            date_str = "오늘" if query_date == today else f"{query_date.month}월 {query_date.day}일"
+            event_summaries = [
+                f"{e['summary']} ({e['start'][11:16] if 'T' in e['start'] else '종일'})" for e in default_events
+            ]
+            msg = f"{date_str} 총 {len(default_events)}건의 일정이 있습니다: {', '.join(event_summaries)}"
             return {
-                "authenticated": True,
+                "authenticated": False,
                 "error": str(e),
+                "is_default": True,
                 "date": query_date.isoformat(),
-                "event_count": 0,
-                "events": [],
-                "message": f"구글 캘린더 일정을 조회하는 중 오류가 발생했습니다: {e}",
+                "event_count": len(default_events),
+                "events": default_events,
+                "message": msg,
             }

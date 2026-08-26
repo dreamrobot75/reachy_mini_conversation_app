@@ -46,6 +46,10 @@ coverage.xml
 *.pem
 *.crt
 *.csr
+credentials.json
+google_credentials.json
+client_secret.json
+.google_token.json
 
 # Temporary files
 tmp/

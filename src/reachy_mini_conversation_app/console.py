@@ -710,16 +710,6 @@ class LocalStream:
             calendar_service.logout()
             return {"ok": True, "status": _get_calendar_status()}
 
-        @settings_app.post("/api/calendar/save-credentials")
-        def _save_calendar_credentials(payload: dict[str, Any]) -> dict[str, Any]:
-            """Save client ID and client secret directly from Settings UI."""
-            client_id = str(payload.get("client_id", "")).strip()
-            client_secret = str(payload.get("client_secret", "")).strip()
-            if not client_id or not client_secret:
-                return {"ok": False, "error": "Client ID와 Client Secret을 모두 입력해 주세요."}
-            calendar_service.save_client_credentials(client_id, client_secret)
-            return {"ok": True}
-
         @settings_app.get("/api/calendar/auth-url")
         def _get_calendar_auth_url(request: Request) -> dict[str, Any]:
             """Generate OAuth 2.0 authorization URL to open in browser."""
@@ -729,19 +719,18 @@ class LocalStream:
 
         @settings_app.get("/api/calendar/oauth2callback")
         def _calendar_oauth_callback(
-            request: Request,
             code: Optional[str] = None,
+            state: Optional[str] = None,
             error: Optional[str] = None,
         ) -> HTMLResponse:
             """Handle OAuth redirect callback from Google."""
-            if error or not code:
+            if error or not code or not state:
                 return HTMLResponse(
                     f"<html><body style='background:#09090b;color:#f87171;font-family:sans-serif;text-align:center;padding-top:50px;'>"
                     f"<h2>❌ Google 인증 실패</h2><p>{error or '인증 코드가 전달되지 않았습니다.'}</p>"
                     f"<button onclick='window.close()' style='padding:8px 16px;cursor:pointer;'>창 닫기</button></body></html>"
                 )
-            redirect_uri = f"{request.base_url}api/calendar/oauth2callback"
-            success = calendar_service.exchange_code(code, redirect_uri=redirect_uri)
+            success = calendar_service.exchange_code(code, state)
             if success:
                 return HTMLResponse(
                     """<!DOCTYPE html>
@@ -775,7 +764,7 @@ class LocalStream:
                 )
             return HTMLResponse(
                 "<html><body style='background:#09090b;color:#f87171;font-family:sans-serif;text-align:center;padding-top:50px;'>"
-                "<h2>❌ 토큰 발급 실패</h2><p>OAuth 토큰을 교환하지 못했습니다. credentials.json 설정을 확인해 주세요.</p>"
+                "<h2>❌ 토큰 발급 실패</h2><p>OAuth 토큰을 교환하지 못했습니다. 서버의 Google OAuth 설정을 확인해 주세요.</p>"
                 "<button onclick='window.close()' style='padding:8px 16px;cursor:pointer;'>창 닫기</button></body></html>"
             )
 

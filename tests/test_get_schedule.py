@@ -1,5 +1,6 @@
 """Unit tests for GoogleCalendarService and GetSchedule tool."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -9,14 +10,87 @@ from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
 from reachy_mini_conversation_app.tools.get_schedule import GetSchedule
 
 
+class _OAuthCredentials:
+    def to_json(self) -> str:
+        return '{"token": "access-token", "refresh_token": "refresh-token"}'
+
+
+class _OAuthFlow:
+    def __init__(self) -> None:
+        self.credentials = _OAuthCredentials()
+        self._authorization_started = False
+
+    def authorization_url(self, **kwargs: object) -> tuple[str, str]:
+        self._authorization_started = True
+        return "https://accounts.google.com/o/oauth2/auth?state=oauth-state", "oauth-state"
+
+    def fetch_token(self, *, code: str) -> None:
+        if not self._authorization_started:
+            raise ValueError("PKCE verifier was not preserved")
+
+
 def test_calendar_service_unauthenticated_graceful_response() -> None:
-    """When credentials don't exist, get_events should return an informative unauthenticated message."""
+    """When credentials don't exist, get_events should return the fixed default schedules."""
     service = GoogleCalendarService()
     with patch.object(service, "get_credentials", return_value=None):
         result = service.get_events(target_date="today")
         assert result["authenticated"] is False
-        assert result["event_count"] == 0
-        assert "구글 캘린더 OAuth 인증이 필요합니다" in result["message"]
+        assert result["is_default"] is True
+        assert result["event_count"] == 5
+        assert len(result["events"]) == 5
+        assert "팀 데일리 스크럼" in result["message"]
+
+
+def test_calendar_service_generates_browser_auth_url_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Server-managed OAuth credentials should enable one-click browser login."""
+    monkeypatch.setattr("reachy_mini_conversation_app.calendar_service.CREDENTIALS_PATHS", [])
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "client-id.apps.googleusercontent.com")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "client-secret")
+    flow_factory = MagicMock(return_value=_OAuthFlow())
+    monkeypatch.setattr(
+        "google_auth_oauthlib.flow.InstalledAppFlow.from_client_config",
+        flow_factory,
+    )
+    service = GoogleCalendarService()
+
+    auth_url, error = service.get_auth_url(redirect_uri="http://localhost:7860/api/calendar/oauth2callback")
+
+    assert service.has_credentials() is True
+    assert error is None
+    assert auth_url == "https://accounts.google.com/o/oauth2/auth?state=oauth-state"
+    client_config = flow_factory.call_args.args[0]
+    assert client_config["web"]["client_id"] == "client-id.apps.googleusercontent.com"
+    assert client_config["web"]["client_secret"] == "client-secret"
+
+
+def test_calendar_service_reuses_authorization_flow_for_token_exchange(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The OAuth callback must reuse the flow that owns the PKCE verifier."""
+    credentials_path = tmp_path / "credentials.json"
+    credentials_path.write_text("{}", encoding="utf-8")
+    token_path = tmp_path / ".google_token.json"
+    monkeypatch.setattr(
+        "reachy_mini_conversation_app.calendar_service.CREDENTIALS_PATHS",
+        [credentials_path],
+    )
+    monkeypatch.setattr("reachy_mini_conversation_app.calendar_service.TOKEN_PATH", token_path)
+    monkeypatch.setattr(
+        "google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file",
+        lambda *args, **kwargs: _OAuthFlow(),
+    )
+    service = GoogleCalendarService()
+
+    auth_url, error = service.get_auth_url()
+    exchanged = service.exchange_code("authorization-code", "oauth-state")
+
+    assert error is None
+    assert auth_url == "https://accounts.google.com/o/oauth2/auth?state=oauth-state"
+    assert exchanged is True
+    assert token_path.read_text(encoding="utf-8") == '{"token": "access-token", "refresh_token": "refresh-token"}'
 
 
 def test_calendar_service_success_formatting() -> None:

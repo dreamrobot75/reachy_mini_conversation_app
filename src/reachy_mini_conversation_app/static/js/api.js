@@ -206,16 +206,6 @@ export const logoutCalendar = async () => {
   return res.json();
 };
 
-export const saveCalendarCredentials = async (payload) => {
-  const res = await fetch("/api/calendar/save-credentials", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("Failed to save calendar credentials");
-  return res.json();
-};
-
 export const getCalendarEvents = async () => {
   const res = await fetch("/api/calendar/events");
   if (!res.ok) throw new Error("Failed to fetch calendar events");
