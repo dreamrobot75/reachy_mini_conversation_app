@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2026 오픈소스 개발자대회 발표자료 - DeskMate (484팀)</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+  <style>
+    :root {
+      --brand-50: #e6f3f5;
+      --brand-100: #b3dde2;
+      --brand-200: #80c6cf;
+      --brand-300: #4db0bc;
+      --brand-400: #2696a4;
+      --brand-500: #0b6773;
+      --brand-600: #095a64;
+      --brand-700: #074d56;
+      --brand-800: #064047;
+      --brand-900: #04292e;
+      --accent-cyan: #0e8a99;
+      --accent-teal: #14b8a6;
+      --accent-orange: #f97316;
+      --accent-green: #10b981;
+      --neutral-0: #ffffff;
+      --neutral-50: #f8f9fa;
+      --neutral-100: #f4f6f9;
+      --neutral-200: #e8eaed;
+      --neutral-300: #d1d5db;
+      --neutral-600: #5f6b7a;
+      --neutral-700: #4b5563;
+      --neutral-800: #1f2937;
+      --neutral-900: #111827;
+      --shadow-sm: 0 2px 8px rgba(11, 103, 115, 0.06);
+      --shadow-md: 0 8px 24px rgba(11, 103, 115, 0.10);
+      --shadow-lg: 0 16px 40px rgba(11, 103, 115, 0.15);
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      background: #0f172a;
+      color: var(--neutral-900);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* Deck Container */
+    #deck-container {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+      background: var(--neutral-100);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Top Navigation / Progress Header */
+    .top-bar {
+      height: 64px;
+      background: var(--neutral-0);
+      border-bottom: 1px solid var(--neutral-200);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2rem;
+      z-index: 100;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+
+    .top-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--brand-500);
+    }
+
+    .top-logo-badge {
+      background: linear-gradient(135deg, var(--brand-500), var(--accent-cyan));
+      color: white;
+      font-size: 0.75rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .slide-indicator {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--neutral-600);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .progress-bar-container {
+      position: absolute;
+      top: 63px;
+      left: 0;
+      width: 100%;
+      height: 3px;
+      background: var(--neutral-200);
+      z-index: 101;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--brand-500), var(--accent-teal));
+      width: 12.5%;
+      transition: width 0.3s ease;
+    }
+
+    /* Slide Stage */
+    .slide-stage {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 3rem;
+    }
+
+    .slide {
+      position: absolute;
+      width: calc(100% - 6rem);
+      max-width: 1400px;
+      height: calc(100% - 4rem);
+      background: var(--neutral-0);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      border: 1px solid var(--neutral-200);
+      padding: 2.5rem 3.5rem;
+      display: flex;
+      flex-direction: column;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateX(40px) scale(0.98);
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow-y: auto;
+    }
+
+    .slide.active {
+      opacity: 1;
+      visibility: visible;
+      transform: translateX(0) scale(1);
+      z-index: 10;
+    }
+
+    /* Slide Header */
+    .slide-header {
+      margin-bottom: 1.5rem;
+    }
+
+    .slide-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--brand-500);
+      background: var(--brand-50);
+      border: 1px solid var(--brand-100);
+      font-size: 0.8rem;
+      font-weight: 700;
+      padding: 0.3rem 0.8rem;
+      border-radius: 6px;
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .slide-title {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--neutral-900);
+      letter-spacing: -0.02em;
+      line-height: 1.25;
+    }
+
+    .slide-subtitle {
+      font-size: 1.05rem;
+      color: var(--neutral-600);
+      margin-top: 0.35rem;
+      font-weight: 500;
+    }
+
+    /* Content Layout Grids */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      flex: 1;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem;
+      flex: 1;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      flex: 1;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--neutral-50);
+      border: 1px solid var(--neutral-200);
+      border-radius: var(--radius-md);
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-sm);
+      border-color: var(--brand-200);
+    }
+
+    .card.brand {
+      background: linear-gradient(145deg, #0b6773 0%, #084c55 100%);
+      color: white;
+      border: none;
+    }
+
+    .card.brand .card-title {
+      color: white;
+    }
+
+    .card.brand .card-desc {
+      color: var(--brand-100);
+    }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--neutral-900);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .card-desc {
+      font-size: 0.92rem;
+      color: var(--neutral-700);
+      line-height: 1.55;
+    }
+
+    /* Highlight Badges & Stats */
+    .stat-badge {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 0.25rem;
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: var(--brand-500);
+    }
+
+    .stat-unit {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--neutral-600);
+    }
+
+    /* Comparison Table */
+    .oss-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      margin-top: 0.5rem;
+      background: white;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .oss-table th {
+      background: var(--brand-500);
+      color: white;
+      font-weight: 700;
+      padding: 0.85rem 1rem;
+      text-align: left;
+    }
+
+    .oss-table td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--neutral-200);
+      color: var(--neutral-800);
+      line-height: 1.45;
+      vertical-align: middle;
+    }
+
+    .oss-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .oss-table tr:nth-child(even) {
+      background: var(--neutral-50);
+    }
+
+    .pill-green {
+      background: #dcfce7;
+      color: #15803d;
+      font-weight: 700;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      display: inline-block;
+    }
+
+    .pill-blue {
+      background: var(--brand-50);
+      color: var(--brand-600);
+      font-weight: 700;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      display: inline-block;
+    }
+
+    /* Architecture Block Visualizer */
+    .arch-diagram {
+      background: #0f172a;
+      border-radius: var(--radius-md);
+      padding: 1.25rem 1.5rem;
+      color: #e2e8f0;
+      font-family: monospace;
+      font-size: 0.82rem;
+      line-height: 1.4;
+      overflow-x: auto;
+      border: 1px solid #1e293b;
+    }
+
+    /* Timeline Scenario Steps */
+    .step-badge {
+      width: 28px;
+      height: 28px;
+      background: var(--brand-500);
+      color: white;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    /* Title Slide Specifics */
+    .title-slide {
+      background: linear-gradient(135deg, #0b6773 0%, #095a64 50%, #04292e 100%);
+      color: white;
+      justify-content: center;
+      align-items: flex-start;
+      border: none;
+      padding: 4rem 5rem;
+    }
+
+    .title-banner {
+      background: rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: white;
+      padding: 0.4rem 1rem;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .hero-title {
+      font-size: 3.2rem;
+      font-weight: 900;
+      color: white;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      margin-bottom: 1rem;
+    }
+
+    .hero-title span {
+      background: linear-gradient(90deg, #5eead4, #99f6e4);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-desc {
+      font-size: 1.25rem;
+      color: var(--brand-100);
+      max-width: 850px;
+      line-height: 1.6;
+      margin-bottom: 2.5rem;
+      font-weight: 400;
+    }
+
+    .hero-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.5rem;
+      width: 100%;
+      padding-top: 2rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .hero-meta-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .hero-meta-label {
+      font-size: 0.8rem;
+      color: var(--brand-200);
+      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .hero-meta-value {
+      font-size: 1.05rem;
+      color: white;
+      font-weight: 700;
+    }
+
+    /* Bottom Controller */
+    .bottom-bar {
+      height: 64px;
+      background: var(--neutral-0);
+      border-top: 1px solid var(--neutral-200);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2rem;
+      z-index: 100;
+    }
+
+    .nav-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 1.2rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--neutral-300);
+      background: var(--neutral-0);
+      color: var(--neutral-800);
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+
+    .nav-btn:hover:not(:disabled) {
+      background: var(--brand-50);
+      color: var(--brand-600);
+      border-color: var(--brand-300);
+    }
+
+    .nav-btn.primary {
+      background: var(--brand-500);
+      color: white;
+      border-color: var(--brand-500);
+    }
+
+    .nav-btn.primary:hover:not(:disabled) {
+      background: var(--brand-600);
+      border-color: var(--brand-600);
+    }
+
+    .nav-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .dots-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--neutral-300);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .dot.active {
+      width: 28px;
+      border-radius: 999px;
+      background: var(--brand-500);
+    }
+
+    .key-tip {
+      font-size: 0.8rem;
+      color: var(--neutral-500);
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    kbd {
+      background: var(--neutral-100);
+      border: 1px solid var(--neutral-300);
+      border-radius: 4px;
+      padding: 0.15rem 0.4rem;
+      font-size: 0.75rem;
+      font-family: monospace;
+      color: var(--neutral-700);
+    }
+
+    /* Print styling */
+    @media print {
+      body {
+        overflow: visible;
+        background: white;
+      }
+      #deck-container {
+        height: auto;
+        overflow: visible;
+      }
+      .top-bar, .bottom-bar, .progress-bar-container {
+        display: none !important;
+      }
+      .slide-stage {
+        padding: 0;
+        display: block;
+      }
+      .slide {
+        position: relative !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        transform: none !important;
+        width: 100% !important;
+        height: 100vh !important;
+        page-break-after: always;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        padding: 3rem !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<div id="deck-container">
+  <!-- Top Navigation -->
+  <header class="top-bar">
+    <div class="top-logo">
+      <span>2026 오픈소스 개발자대회</span>
+      <span class="top-logo-badge">접수번호 484</span>
+    </div>
+    <div class="slide-indicator">
+      <span id="current-slide-title">프로젝트 표지</span>
+      <span style="color: var(--neutral-300)">|</span>
+      <span><strong id="slide-num" style="color: var(--brand-500)">1</strong> / 8</span>
+    </div>
+  </header>
+
+  <div class="progress-bar-container">
+    <div class="progress-bar" id="progress-bar"></div>
+  </div>
+
+  <!-- Main Slide Stage -->
+  <main class="slide-stage">
+
+    <!-- SLIDE 1: Cover -->
+    <section class="slide title-slide active" data-title="프로젝트 표지">
+      <div class="title-banner">
+        <span>🏆 2026 제18회 오픈소스 개발자대회 출품작</span>
+      </div>
+      <h1 class="hero-title">
+        Reachy Mini 기반 초저지연<br>
+        <span>한국어 감정 반응형 데스크 동반자</span>
+      </h1>
+      <p class="hero-desc">
+        9-DOF 물리 로봇 기구학과 OpenAI Realtime API를 융합하여,<br>
+        자연스러운 시선 교환(Eye Contact), 한국어 인터럽트(Barge-in), 생산성 도구를 제공하는 오픈소스 Embodied AI
+      </p>
+      <div class="hero-meta-grid">
+        <div class="hero-meta-item">
+          <span class="hero-meta-label">팀명</span>
+          <span class="hero-meta-value">오로카 판교 (OROCA Pangyo)</span>
+        </div>
+        <div class="hero-meta-item">
+          <span class="hero-meta-label">참가부문</span>
+          <span class="hero-meta-value">일반 / 자유과제 (접수 484)</span>
+        </div>
+        <div class="hero-meta-item">
+          <span class="hero-meta-label">핵심 기술</span>
+          <span class="hero-meta-value">OpenAI Realtime + YuNet + YOLOv8</span>
+        </div>
+        <div class="hero-meta-item">
+          <span class="hero-meta-label">오픈소스 라이선스</span>
+          <span class="hero-meta-value">Apache License 2.0</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 2: Problem & Motivation -->
+    <section class="slide" data-title="개발 배경 및 목표">
+      <div class="slide-header">
+        <span class="slide-tag">Problem & Purpose</span>
+        <h2 class="slide-title">개발 배경 및 핵심 목표</h2>
+        <p class="slide-subtitle">기존 데스크탑 AI 스피커의 물리적 한계를 극복하고 살아있는 상호작용을 구현합니다.</p>
+      </div>
+      <div class="grid-2">
+        <div class="card" style="border-left: 4px solid #ef4444;">
+          <div class="card-title" style="color: #b91c1c;">
+            <span>⚠️ 기존 AI 스피커 및 챗봇의 한계</span>
+          </div>
+          <div class="card-desc">
+            <ul style="list-style: disc; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.5rem;">
+              <li><strong>물리적 실체(Embodiment) 부재:</strong> 화면 속 텍스트나 고정된 스피커 음성에 그쳐 몰입감 및 친밀감이 현저히 저하됨.</li>
+              <li><strong>일방향 발화 & 긴 응답 지연:</strong> REST 기반 폴링 방식으로 인해 턴테이킹 딜레이가 크고, 말 중간에 끼어들기(Barge-in) 불가.</li>
+              <li><strong>시선 교환(Eye Contact) 불가:</strong> 화자의 위치나 얼굴을 인지하지 못해 허공을 보며 말하는 인공적 어색함 존재.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="card" style="border-left: 4px solid var(--brand-500); background: var(--brand-50);">
+          <div class="card-title" style="color: var(--brand-600);">
+            <span>🎯 DeskMate의 3대 혁신 개발 목표</span>
+          </div>
+          <div class="card-desc">
+            <ul style="list-style: disc; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.5rem;">
+              <li><strong>초저지연 양방향 한국어 파이프라인:</strong> 24kHz WebSocket 양방향 오디오 스트리밍과 Server VAD 기반 즉각 인터럽트 지원.</li>
+              <li><strong>다감각 3D 공간 인지(Audio-Visual):</strong> reSpeaker DoA 음원 방향 추적 + YuNet 3D 안면 위치 좌표화 기반 정밀 시선 정렬.</li>
+              <li><strong>데스크 생산성 & 하드웨어 안전 보호:</strong> 뽀모도로 타이머, Google Calendar 브리핑, 프로세스 종료 시 <code>Sleep on Exit</code> 기구 보호.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 3: System Architecture -->
+    <section class="slide" data-title="시스템 아키텍처">
+      <div class="slide-header">
+        <span class="slide-tag">System Architecture</span>
+        <h2 class="slide-title">5계층 모듈형 시스템 아키텍처</h2>
+        <p class="slide-subtitle">인지(Perception), 대화(Interaction), 기구학(Kinematics), 도구(Tools), 대시보드(Presentation)의 유기적 결합</p>
+      </div>
+      <div class="grid-2">
+        <div class="arch-diagram">
+<span style="color:#38bdf8;">[ User Audio / 3D Vision ]</span>
+       │
+       ▼
+┌────────────────────────────────────────────────────────┐
+│  <strong style="color:#a7f3d0;">1. Perception Layer</strong>                                   │
+│  • XVF3800 DoA Sound Direction (360° Azimuth)          │
+│  • YuNet Face 3D Pinhole Geometry (X, Y, Z)            │
+│  • YOLOv8 Nano Real-time Desktop Object Detection       │
+└────────────────────────────────────────────────────────┘
+       ▼
+┌────────────────────────────────────────────────────────┐
+│  <strong style="color:#93c5fd;">2. Interaction Core Layer</strong>                             │
+│  • OpenAI Realtime WebSocket (24kHz Audio Streaming)   │
+│  • Server VAD & Instant Barge-in Interruption          │
+│  • Korean Desk Persona Prompting & Standby State Loop  │
+└────────────────────────────────────────────────────────┘
+       ▲
+       ▼ (Tool RPC & State Management)
+┌────────────────────────────────────────────────────────┐
+│  <strong style="color:#fde047;">3. Tools & Kinematics Layer</strong>                           │
+│  • 6-DOF Stewart Platform IK & 2-DOF Emotion Antennas  │
+│  • Background Pomodoro Timer & Google Calendar OAuth   │
+│  • Graceful Hardware Sleep on Exit Protection          │
+└────────────────────────────────────────────────────────┘
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 0.8rem;">
+          <div class="card" style="padding: 1rem;">
+            <div class="card-title" style="font-size: 1rem;">🤖 9-DOF 하드웨어 플랫폼</div>
+            <div class="card-desc" style="font-size: 0.85rem;">
+              6자유도 스튜어트 헤드 + 2자유도 독립 안테나 + 1자유도 바디 요(Yaw)를 통한 풍부한 비언어적 표현.
+            </div>
+          </div>
+          <div class="card-desc" style="padding: 1rem; background: white; border-radius: var(--radius-md); border: 1px solid var(--neutral-200);">
+            <div class="card-title" style="font-size: 1rem; margin-bottom: 0.3rem;">🌐 실시간 대시보드 & 시뮬레이션</div>
+            <p style="font-size: 0.85rem; color: var(--neutral-700);">
+              • 포트 7860 WebSocket JSON-RPC 대시보드 및 MJPEG 카메라 뷰어<br>
+              • 물리 로봇 없이도 즉시 테스트 가능한 <strong>MuJoCo 3D 물리 시뮬레이터</strong> 원클릭 연동 지원
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 4: Base Code vs Added Features -->
+    <section class="slide" data-title="기능 비교 및 차별성">
+      <div class="slide-header">
+        <span class="slide-tag">Innovation & Comparison</span>
+        <h2 class="slide-title">기본 코드(Upstream SDK) 대비 추가/고도화 기능</h2>
+        <p class="slide-subtitle">기존 영문 프로필/단방향 한계를 뛰어넘어 초저지연 한국어 및 실시간 3D 비전 도구셋을 신설했습니다.</p>
+      </div>
+      <table class="oss-table">
+        <thead>
+          <tr>
+            <th style="width: 18%;">구분</th>
+            <th style="width: 32%;">기본 제공 기능 (Upstream Base)</th>
+            <th style="width: 32%;">본 프로젝트 추가/고도화 기능 (DeskMate)</th>
+            <th style="width: 18%;">기여 및 차별성</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>음성 대화 백엔드</strong></td>
+            <td>Hugging Face 기반 / 영문 중심 / 응답 지연 발생</td>
+            <td><strong>OpenAI Realtime WebSocket</strong> (24kHz 오디오 + 실시간 한국어 Barge-in)</td>
+            <td><span class="pill-green">초저지연 대화</span></td>
+          </tr>
+          <tr>
+            <td><strong>한국어 페르소나</strong></td>
+            <td>기본 영문/불어 프로필만 제공</td>
+            <td><strong>한국어 전용 프로필 (<code>desk_companion_ko</code>)</strong> &amp; 음성 호출 루프</td>
+            <td><span class="pill-blue">K-Voice 최적화</span></td>
+          </tr>
+          <tr>
+            <td><strong>3D 공간 인지</strong></td>
+            <td>단순 수동 각도 회전 (3D 좌표 미지원)</td>
+            <td><strong>reSpeaker DoA 음원 추적 + YuNet 3D 안면 좌표화 + YOLOv8 사물 인식</strong></td>
+            <td><span class="pill-green">정밀 Eye Contact</span></td>
+          </tr>
+          <tr>
+            <td><strong>생산성 도구</strong></td>
+            <td>단순 모션 제스처 위주</td>
+            <td><strong>세션 유지형 뽀모도로 타이머 + Google Calendar 연동 + MCP 클라이언트</strong></td>
+            <td><span class="pill-blue">데스크 업무 비서</span></td>
+          </tr>
+          <tr>
+            <td><strong>하드웨어 안전성</strong></td>
+            <td>종료 시 모터 전원 차단으로 헤드 처짐 위험</td>
+            <td><strong>SIGINT/종료 감지 시 자동 <code>Sleep Pose on Exit</code> 안전 보호</strong></td>
+            <td><span class="pill-green">기구부 파손 방지</span></td>
+          </tr>
+          <tr>
+            <td><strong>코드 품질 &amp; CI</strong></td>
+            <td>기본 단위 테스트 수준</td>
+            <td><strong>415개 pytest 100% 통과 + mypy strict + 8종 멀티 OS CI/CD</strong></td>
+            <td><span class="pill-blue">엔지니어링 완결성</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- SLIDE 5: 5 Core Scenarios -->
+    <section class="slide" data-title="5단계 시연 시나리오">
+      <div class="slide-header">
+        <span class="slide-tag">Demonstration Scenarios</span>
+        <h2 class="slide-title">시연 영상 5단계 핵심 상호작용 흐름</h2>
+        <p class="slide-subtitle">실제 사용자 데스크 환경에서 벌어지는 유기적 인터랙션 시나리오</p>
+      </div>
+      <div class="grid-3" style="grid-template-columns: repeat(5, 1fr); gap: 0.85rem;">
+        <div class="card">
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <span class="step-badge">1</span>
+            <strong style="font-size:0.95rem;">음원 추적 &amp; 기상</strong>
+          </div>
+          <p class="card-desc" style="font-size:0.82rem;">
+            저전력 슬립 중 <em>"리치야!"</em> 호출 시, DoA로 화자 방향을 감지해 고개를 돌리며 눈맞춤 기상.
+          </p>
+        </div>
+
+        <div class="card">
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <span class="step-badge">2</span>
+            <strong style="font-size:0.95rem;">일정 브리핑</strong>
+          </div>
+          <p class="card-desc" style="font-size:0.82rem;">
+            Google Calendar OAuth 연동으로 오늘의 5대 핵심 업무 일정을 요약 브리핑하며 헤드 끄덕임.
+          </p>
+        </div>
+
+        <div class="card">
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <span class="step-badge">3</span>
+            <strong style="font-size:0.95rem;">뽀모도로 집중</strong>
+          </div>
+          <p class="card-desc" style="font-size:0.82rem;">
+            25분 집중 세션 돌입 시 안테나를 모으고 대기. 만료 시 자동 기상하여 5분 스트레칭 권유.
+          </p>
+        </div>
+
+        <div class="card">
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <span class="step-badge">4</span>
+            <strong style="font-size:0.95rem;">Barge-in &amp; 감정</strong>
+          </div>
+          <p class="card-desc" style="font-size:0.82rem;">
+            로봇 발화 중 사용자가 말하면 즉각 음성을 끊고 경청하며, 기쁨 대화 시 안테나 파닥임 댄스.
+          </p>
+        </div>
+
+        <div class="card">
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <span class="step-badge">5</span>
+            <strong style="font-size:0.95rem;">3D 비전 &amp; 안전수면</strong>
+          </div>
+          <p class="card-desc" style="font-size:0.82rem;">
+            YuNet 3D 얼굴/사물 인식 시선 추적 및 <em>"잘 자"</em> 명령 시 기구 처짐 없이 안전 수면 복귀.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 6: Evaluation Criteria Compliance -->
+    <section class="slide" data-title="서면 평가 기준 충족성">
+      <div class="slide-header">
+        <span class="slide-tag">Evaluation Alignment</span>
+        <h2 class="slide-title">1차 서면 평가 5대 기준 충족도 (30점 만점)</h2>
+        <p class="slide-subtitle">평가 항목별 철저한 기술 검증과 오픈소스 거버넌스를 완벽히 준수했습니다.</p>
+      </div>
+      <div class="grid-3" style="grid-template-columns: repeat(5, 1fr); gap: 0.85rem;">
+        <div class="card" style="border-top: 4px solid var(--brand-500);">
+          <div style="font-size: 0.8rem; font-weight: 700; color: var(--brand-600);">평가 1 (6점)</div>
+          <div class="card-title" style="font-size: 0.95rem;">프로젝트 혁신성</div>
+          <p class="card-desc" style="font-size: 0.8rem;">
+            • 24kHz 실시간 오디오 스트리밍 &amp; Server VAD<br>
+            • DoA + YuNet 3D + YOLOv8 다감각 공간 융합<br>
+            • Embodied AI 신체 감정 표현
+          </p>
+        </div>
+
+        <div class="card" style="border-top: 4px solid var(--accent-teal);">
+          <div style="font-size: 0.8rem; font-weight: 700; color: var(--accent-teal);">평가 2 (6점)</div>
+          <div class="card-title" style="font-size: 0.95rem;">코드 완성도/구조</div>
+          <p class="card-desc" style="font-size: 0.8rem;">
+            • <strong>415개 pytest 100% Pass</strong><br>
+            • <code>mypy --strict</code> 58개 파일 통과<br>
+            • Google Python Style Guide &amp; Ruff 클린
+          </p>
+        </div>
+
+        <div class="card" style="border-top: 4px solid var(--accent-orange);">
+          <div style="font-size: 0.8rem; font-weight: 700; color: var(--accent-orange);">평가 3 (6점)</div>
+          <div class="card-title" style="font-size: 0.95rem;">협업 및 관리체계</div>
+          <p class="card-desc" style="font-size: 0.8rem;">
+            • 8종 GitHub Actions 멀티 OS CI/CD<br>
+            • CONTRIBUTING, AGENTS, PR 템플릿<br>
+            • Apache 2.0 라이선스 &amp; SBOM 확립
+          </p>
+        </div>
+
+        <div class="card" style="border-top: 4px solid #3b82f6;">
+          <div style="font-size: 0.8rem; font-weight: 700; color: #3b82f6);">평가 4 (6점)</div>
+          <div class="card-title" style="font-size: 0.95rem;">개발 문서 구체성</div>
+          <p class="card-desc" style="font-size: 0.8rem;">
+            • 단일 진실 README 및 아키텍처 SVG<br>
+            • 상세 시나리오 정의서 &amp; 시연 샷리스트<br>
+            • MuJoCo 시뮬 원클릭 실행 스크립트
+          </p>
+        </div>
+
+        <div class="card" style="border-top: 4px solid #8b5cf6;">
+          <div style="font-size: 0.8rem; font-weight: 700; color: #8b5cf6);">평가 5 (6점)</div>
+          <div class="card-title" style="font-size: 0.95rem;">발전 가능성</div>
+          <p class="card-desc" style="font-size: 0.8rem;">
+            • Pollen Robotics SDK 100% 호환<br>
+            • 표준 MCP 클라이언트로 도구 무제한 확장<br>
+            • 교육, 돌봄, 오피스 다목적 응용
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 7: Future Roadmap & Value -->
+    <section class="slide" data-title="기대효과 및 로드맵">
+      <div class="slide-header">
+        <span class="slide-tag">Vision & Roadmap</span>
+        <h2 class="slide-title">기대효과 및 향후 발전 로드맵</h2>
+        <p class="slide-subtitle">글로벌 오픈소스 로봇 생태계에 기여하고 누구나 책상 위 AI 로봇을 갖는 시대를 엽니다.</p>
+      </div>
+      <div class="grid-2">
+        <div class="card" style="background: var(--brand-50); border-color: var(--brand-200);">
+          <div class="card-title" style="color: var(--brand-700);">🌟 기술적·산업적 기대효과</div>
+          <div class="card-desc">
+            <p><strong>1. Embodied AI 표준 레퍼런스 확립:</strong> 최신 클라우드 실시간 대화 모델과 다자유도 물리 로봇 기구학의 완벽한 융합 패턴 제시.</p>
+            <p style="margin-top: 0.5rem;"><strong>2. 일상 속 개인화 데스크 동반자:</strong> 단순 음성 비서를 넘어 집중력 케어, 일정 브리핑, 감정 교류를 제공하는 데스크 비서 보급.</p>
+            <p style="margin-top: 0.5rem;"><strong>3. 글로벌 오픈소스 기여:</strong> Reachy Mini 글로벌 커뮤니티에 한국어 음성 및 생산성 툴킷 기여.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🚀 차세대 발전 로드맵</div>
+          <div class="card-desc">
+            <p><strong>• 온디바이스 SLM / Local TTS 하이브리드:</strong> 오프라인 환경에서도 동작하는 경량 Whisper + Qwen-Audio + Kokoro TTS 지원.</p>
+            <p style="margin-top: 0.5rem;"><strong>• 멀티모달 Vision-Language (VLM) 실시간 대화:</strong> 사용자의 코딩 화면, 책, 문서를 로봇이 함께 보며 조언하는 시각 대화 확장.</p>
+            <p style="margin-top: 0.5rem;"><strong>• 멀티 로봇 협업:</strong> 2대 이상의 로봇이 상호 대화하며 작업을 분담하는 다자간 인터랙션 연구.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 8: Summary & QnA -->
+    <section class="slide card brand" data-title="마무리 및 Q&A" style="justify-content: center; align-items: center; text-align: center; padding: 4rem;">
+      <span class="slide-tag" style="background: rgba(255,255,255,0.15); color: white; border-color: rgba(255,255,255,0.3);">Summary &amp; Repository</span>
+      <h2 style="font-size: 2.8rem; font-weight: 800; margin: 1rem 0; color: white;">
+        물리적 실체를 가진<br>
+        <span style="color: #5eead4;">당신만의 지능형 데스크 동반자, DeskMate</span>
+      </h2>
+      <p style="font-size: 1.15rem; color: var(--brand-100); max-width: 750px; line-height: 1.6; margin-bottom: 2rem;">
+        누구나 손쉽게 재현하고 확장할 수 있는 오픈소스 로봇 대화 프레임워크를 만듭니다.<br>
+        경청해 주셔서 대단히 감사합니다.
+      </p>
+      <div style="display: flex; gap: 1rem; justify-content: center;">
+        <a href="https://github.com/orocapangyo/reachy_mini_conversation_app" target="_blank" style="text-decoration: none;" class="nav-btn primary">
+          📂 GitHub 저장소 바로가기
+        </a>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Bottom Navigation Controller -->
+  <footer class="bottom-bar">
+    <div class="key-tip">
+      <span>키보드 조작:</span>
+      <kbd>←</kbd> <kbd>→</kbd> 슬라이드 이동 &nbsp;|&nbsp; <kbd>Space</kbd> 다음 &nbsp;|&nbsp; <kbd>F</kbd> 전체화면
+    </div>
+
+    <div class="dots-nav" id="dots-container"></div>
+
+    <div style="display: flex; gap: 0.5rem;">
+      <button class="nav-btn" id="prev-btn" onclick="prevSlide()">이전</button>
+      <button class="nav-btn primary" id="next-btn" onclick="nextSlide()">다음</button>
+    </div>
+  </footer>
+</div>
+
+<script>
+  let currentSlide = 0;
+  const slides = document.querySelectorAll('.slide');
+  const totalSlides = slides.length;
+  const slideNumEl = document.getElementById('slide-num');
+  const slideTitleEl = document.getElementById('current-slide-title');
+  const progressBar = document.getElementById('progress-bar');
+  const dotsContainer = document.getElementById('dots-container');
+  const prevBtn = document.getElementById('prev-btn');
+  const nextBtn = document.getElementById('next-btn');
+
+  // Initialize dots
+  slides.forEach((slide, idx) => {
+    const dot = document.createElement('div');
+    dot.className = `dot ${idx === 0 ? 'active' : ''}`;
+    dot.title = slide.getAttribute('data-title') || `Slide ${idx + 1}`;
+    dot.onclick = () => goToSlide(idx);
+    dotsContainer.appendChild(dot);
+  });
+
+  const dots = document.querySelectorAll('.dot');
+
+  function updateSlideView() {
+    slides.forEach((slide, idx) => {
+      slide.classList.toggle('active', idx === currentSlide);
+    });
+
+    dots.forEach((dot, idx) => {
+      dot.classList.toggle('active', idx === currentSlide);
+    });
+
+    slideNumEl.textContent = currentSlide + 1;
+    slideTitleEl.textContent = slides[currentSlide].getAttribute('data-title') || '';
+    progressBar.style.width = `${((currentSlide + 1) / totalSlides) * 100}%`;
+
+    prevBtn.disabled = currentSlide === 0;
+    nextBtn.textContent = currentSlide === totalSlides - 1 ? '처음으로' : '다음';
+  }
+
+  function goToSlide(idx) {
+    if (idx >= 0 && idx < totalSlides) {
+      currentSlide = idx;
+      updateSlideView();
+    }
+  }
+
+  function nextSlide() {
+    if (currentSlide < totalSlides - 1) {
+      currentSlide++;
+    } else {
+      currentSlide = 0;
+    }
+    updateSlideView();
+  }
+
+  function prevSlide() {
+    if (currentSlide > 0) {
+      currentSlide--;
+      updateSlideView();
+    }
+  }
+
+  // Keyboard navigation
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+      e.preventDefault();
+      nextSlide();
+    } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+      e.preventDefault();
+      prevSlide();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      goToSlide(0);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      goToSlide(totalSlides - 1);
+    } else if (e.key === 'f' || e.key === 'F') {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+  });
+
+  // Touch Swipe support
+  let touchStartX = 0;
+  window.addEventListener('touchstart', (e) => {
+    touchStartX = e.touches[0].clientX;
+  }, { passive: true });
+
+  window.addEventListener('touchend', (e) => {
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchStartX - touchEndX;
+    if (Math.abs(diff) > 50) {
+      if (diff > 0) nextSlide();
+      else prevSlide();
+    }
+  }, { passive: true });
+
+  updateSlideView();
+</script>
+</body>
+</html>
