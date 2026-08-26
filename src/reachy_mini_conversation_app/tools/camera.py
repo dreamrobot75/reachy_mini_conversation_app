@@ -48,6 +48,10 @@ class Camera(Tool):
             logger.error("Camera is disabled")
             return {"error": "Camera is disabled"}
 
+        if not hasattr(deps.reachy_mini, "media") or deps.reachy_mini.media is None:
+            logger.error("Reachy Mini media interface is not available")
+            return {"error": "Camera media is not available"}
+
         jpeg_bytes = deps.reachy_mini.media.get_frame_jpeg()
         if jpeg_bytes is None:
             logger.error("No frame available from camera")

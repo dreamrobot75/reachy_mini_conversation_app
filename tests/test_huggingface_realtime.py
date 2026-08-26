@@ -144,7 +144,10 @@ async def test_partial_transcription_uses_latest_snapshot(monkeypatch: Any) -> N
     """Partial transcription snapshots should replace older snapshots for the same item."""
     monkeypatch.setattr(hf_mod, "get_session_instructions", lambda _instance_path=None: "test")
     monkeypatch.setattr(hf_mod, "get_session_voice", lambda default=HF_DEFAULT_VOICE: "Aiden")
+    monkeypatch.setattr(hf_mod, "get_session_greeting_prompt", lambda: "")
     monkeypatch.setattr(hf_mod, "get_tool_specs", lambda: [])
+    monkeypatch.setattr(hf_mod.BackgroundToolManager, "start_up", MagicMock())
+    monkeypatch.setattr(hf_mod.BackgroundToolManager, "shutdown", AsyncMock())
 
     handler = HuggingFaceRealtimeHandler(ToolDependencies(reachy_mini=MagicMock(), movement_manager=MagicMock()))
     handler.client = _make_fake_realtime_client(
@@ -155,8 +158,6 @@ async def test_partial_transcription_uses_latest_snapshot(monkeypatch: Any) -> N
             ),
         )
     )
-    monkeypatch.setattr(type(handler.tool_manager), "start_up", MagicMock())
-    monkeypatch.setattr(type(handler.tool_manager), "shutdown", AsyncMock())
 
     await handler._run_realtime_session()
 
@@ -251,8 +252,10 @@ async def test_run_realtime_session_uses_default_voice_for_lb_allocated_sessions
     """Use the backend default speaker when no profile voice is selected for the hf LB."""
     monkeypatch.setattr(hf_mod, "get_session_instructions", lambda _instance_path=None: "test")
     monkeypatch.setattr(hf_mod, "get_session_voice", lambda default=HF_DEFAULT_VOICE: default)
+    monkeypatch.setattr(hf_mod, "get_session_greeting_prompt", lambda: "")
     monkeypatch.setattr(hf_mod, "get_tool_specs", lambda: [])
     monkeypatch.setattr(config, "HF_REALTIME_SESSION_URL", "https://lb.example.test/session")
+    monkeypatch.setattr(config, "REALTIME_TRANSCRIPTION_LANGUAGE", "en")
 
     captured_update: dict[str, Any] = {}
     handler = HuggingFaceRealtimeHandler(ToolDependencies(reachy_mini=MagicMock(), movement_manager=MagicMock()))
@@ -313,6 +316,7 @@ async def test_run_realtime_session_passes_allocated_session_query(monkeypatch: 
     """Hugging Face sessions must forward the allocated session token to the websocket connect call."""
     monkeypatch.setattr(hf_mod, "get_session_instructions", lambda _instance_path=None: "test")
     monkeypatch.setattr(hf_mod, "get_session_voice", lambda default=HF_DEFAULT_VOICE: default)
+    monkeypatch.setattr(hf_mod, "get_session_greeting_prompt", lambda: "")
     monkeypatch.setattr(hf_mod, "get_tool_specs", lambda: [])
 
     captured_connect: dict[str, Any] = {}

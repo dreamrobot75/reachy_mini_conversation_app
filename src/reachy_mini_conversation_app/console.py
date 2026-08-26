@@ -10,7 +10,7 @@ import asyncio
 import logging
 from typing import Any, List, Optional
 from pathlib import Path
-from collections.abc import Callable
+from collections.abc import Callable, AsyncIterator
 
 import numpy as np
 
@@ -22,6 +22,7 @@ from reachy_mini_conversation_app.config import (
     HF_BACKEND,
     LOCKED_PROFILE,
     HF_REALTIME_WS_URL_ENV,
+    CONVERSATION_BACKEND_ENV,
     HF_LOCAL_CONNECTION_MODE,
     HF_DEPLOYED_CONNECTION_MODE,
     HF_REALTIME_CONNECTION_MODE_ENV,
@@ -39,6 +40,7 @@ from reachy_mini_conversation_app.config import (
 )
 from reachy_mini_conversation_app.prompts import get_session_voice, get_session_instructions
 from reachy_mini_conversation_app.streaming import AdditionalOutputs, audio_to_float32
+from reachy_mini_conversation_app.camera_service import CameraService
 from reachy_mini_conversation_app.startup_settings import read_startup_settings, write_startup_settings
 from reachy_mini_conversation_app.tools.core_tools import initialize_tools
 from reachy_mini_conversation_app.tool_space_routes import register_tool_space_methods
@@ -53,13 +55,17 @@ from reachy_mini_conversation_app.conversation_handler import ConversationHandle
 
 try:
     # FastAPI is provided by the Reachy Mini Apps runtime
-    from fastapi import FastAPI, Response
+    from fastapi import FastAPI, Request, Response
     from pydantic import BaseModel
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
     from starlette.staticfiles import StaticFiles
 except Exception:  # pragma: no cover - only loaded when settings_app is used
     FastAPI = object  # type: ignore
+    Request = object  # type: ignore
+    Response = object  # type: ignore
     FileResponse = object  # type: ignore
+    HTMLResponse = object  # type: ignore
+    StreamingResponse = object  # type: ignore
     StaticFiles = object  # type: ignore
     BaseModel = object  # type: ignore
 
@@ -462,11 +468,22 @@ class LocalStream:
         return "Applied personality and restarting backend."
 
     async def get_available_voices(self) -> list[str]:
-        """Return the voices available for the Hugging Face backend."""
-        return get_available_voices()
+        """Return the voices available for the active backend handler."""
+        try:
+            return await self.handler.get_available_voices()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("Failed to read voices from the active handler: %s", exc)
+            return get_available_voices()
 
     def get_current_voice(self) -> str:
-        """Return the currently selected voice override or profile voice."""
+        """Return the voice currently selected by the active backend handler."""
+        try:
+            return self.handler.get_current_voice()
+        except Exception as exc:
+            logger.warning("Failed to read the current voice from the active handler: %s", exc)
+
         if self._voice_override:
             return self._voice_override
         try:
@@ -536,18 +553,21 @@ class LocalStream:
             hf_ws_url = get_hf_direct_ws_url()
             hf_direct_host, hf_direct_port = parse_hf_direct_target(hf_ws_url)
             hf_connection_selection = get_hf_connection_selection()
+            is_openai = config.CONVERSATION_BACKEND == "openai"
+            has_openai_key = bool((config.OPENAI_API_KEY or "").strip())
             has_hf_connection = hf_connection_selection.has_target
             backend_connection = self._backend_connection_status()
+            can_proceed = has_openai_key if is_openai else has_hf_connection
             return {
-                "backend": HF_BACKEND,
-                "has_key": has_hf_connection,
+                "backend": config.CONVERSATION_BACKEND,
+                "has_key": has_openai_key if is_openai else has_hf_connection,
                 "has_hf_session_url": bool(hf_session_url),
                 "has_hf_ws_url": bool(hf_ws_url),
                 "has_hf_connection": has_hf_connection,
                 "hf_connection_mode": hf_connection_selection.mode,
                 "hf_direct_host": hf_direct_host,
                 "hf_direct_port": hf_direct_port,
-                "can_proceed": has_hf_connection,
+                "can_proceed": can_proceed,
                 "can_proceed_with_hf": has_hf_connection,
                 "requires_restart": not self._can_rebuild_handler(),
                 **backend_connection,
@@ -562,6 +582,197 @@ class LocalStream:
         @settings_app.get("/favicon.ico")
         def _favicon() -> Response:
             return Response(status_code=204)
+
+        camera_service = CameraService.get_instance()
+        camera_service.set_deps_provider(lambda: self.handler.deps if self.handler else None)
+
+        @settings_app.get("/api/camera/devices")
+        def _camera_devices() -> dict[str, object]:
+            """List available camera devices and the currently active device ID."""
+            return {
+                "devices": camera_service.list_devices(),
+                "active": camera_service.get_active_device_id(),
+            }
+
+        @settings_app.post("/api/camera/select")
+        def _camera_select(device: str = "auto") -> dict[str, object]:
+            """Select active camera device source."""
+            ok = camera_service.select_device(device)
+            return {"ok": ok, "active": camera_service.get_active_device_id()}
+
+        @settings_app.get("/api/camera/frame")
+        def _camera_frame() -> Response:
+            """Return the latest camera frame as a single JPEG image."""
+            frame_bytes = camera_service.get_frame_jpeg()
+            if frame_bytes:
+                return Response(content=frame_bytes, media_type="image/jpeg")
+            return Response(status_code=204)
+
+        @settings_app.get("/api/camera/stream")
+        async def _camera_stream() -> Any:
+            """Stream live camera frames via multipart/x-mixed-replace MJPEG."""
+
+            async def _stream_frames() -> AsyncIterator[bytes]:
+                while True:
+                    try:
+                        frame_bytes = camera_service.get_frame_jpeg()
+                        if frame_bytes:
+                            yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n")
+                        await asyncio.sleep(0.06)  # ~15 FPS
+                    except asyncio.CancelledError:
+                        break
+                    except Exception:
+                        await asyncio.sleep(0.2)
+
+            return StreamingResponse(_stream_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+        from reachy_mini_conversation_app.vision_config import VisionConfig
+
+        vision_config = VisionConfig.get_instance()
+
+        @settings_app.get("/api/vision/settings")
+        def _get_vision_settings() -> dict[str, Any]:
+            """Return current vision & face recognition settings."""
+            from dataclasses import asdict
+
+            return {
+                **asdict(vision_config),
+                "active_camera": camera_service.get_active_device_id(),
+                "available_cameras": camera_service.list_devices(),
+            }
+
+        @settings_app.post("/api/vision/settings")
+        def _save_vision_settings(payload: dict[str, Any]) -> dict[str, Any]:
+            """Update vision & face recognition settings."""
+            vision_config.update(payload)
+            if "active_camera" in payload:
+                camera_service.select_device(str(payload["active_camera"]))
+            return {"ok": True, "settings": _get_vision_settings()}
+
+        @settings_app.post("/api/vision/test-face")
+        def _test_face_detection() -> dict[str, Any]:
+            """Test real-time 3D face recognition on the active camera frame."""
+            frame = camera_service.get_frame_bgr()
+            if frame is None:
+                return {
+                    "detected": False,
+                    "message": "카메라 영상을 가져올 수 없습니다. 카메라가 연결되어 있는지 확인해 주세요.",
+                }
+            try:
+                from reachy_mini_conversation_app.vision.face_detector_3d import Face3DDetector
+
+                detector = Face3DDetector()
+                faces = detector.detect(frame)
+                if not faces:
+                    return {"detected": False, "message": "카메라 시야에서 얼굴이 감지되지 않았습니다."}
+                face = faces[0]
+                person_name = vision_config.registered_person_name or "사용자"
+                person_tag = f" ({person_name}님으로 식별됨)" if person_name else ""
+                return {
+                    "detected": True,
+                    "distance": round(face.distance, 2),
+                    "person_name": person_name,
+                    "coordinates_3d": {
+                        "x": round(face.x, 3),
+                        "y": round(face.y, 3),
+                        "z": round(face.z, 3),
+                    },
+                    "message": f"얼굴 인식 성공{person_tag}! (거리: {face.x:.2f}m, 좌우: {face.y:+.2f}m, 높이: {face.z:+.2f}m)",
+                }
+            except Exception as e:
+                logger.error("Face test failed: %s", e)
+                return {"detected": False, "error": str(e), "message": f"얼굴 인식 테스트 오류: {e}"}
+
+        from reachy_mini_conversation_app.calendar_service import GoogleCalendarService
+
+        calendar_service = GoogleCalendarService.get_instance()
+
+        @settings_app.get("/api/calendar/status")
+        def _get_calendar_status() -> dict[str, Any]:
+            """Return Google Calendar OAuth connection status."""
+            return {
+                "authenticated": calendar_service.is_authenticated(),
+                "has_credentials": calendar_service.has_credentials(),
+            }
+
+        @settings_app.post("/api/calendar/set-token")
+        def _set_calendar_token(payload: dict[str, Any]) -> dict[str, Any]:
+            """Save Google OAuth access token directly from frontend popup."""
+            token = str(payload.get("token") or "").strip()
+            if not token:
+                return {"ok": False, "error": "토큰 값이 비어있습니다."}
+            expires_in = int(payload.get("expires_in") or 3600)
+            calendar_service.set_access_token(token, expires_in=expires_in)
+            return {"ok": True, "status": _get_calendar_status()}
+
+        @settings_app.post("/api/calendar/logout")
+        def _logout_calendar() -> dict[str, Any]:
+            """Log out and clear saved Google Calendar tokens."""
+            calendar_service.logout()
+            return {"ok": True, "status": _get_calendar_status()}
+
+        @settings_app.get("/api/calendar/auth-url")
+        def _get_calendar_auth_url(request: Request) -> dict[str, Any]:
+            """Generate OAuth 2.0 authorization URL to open in browser."""
+            redirect_uri = f"{request.base_url}api/calendar/oauth2callback"
+            url, err = calendar_service.get_auth_url(redirect_uri=redirect_uri)
+            return {"auth_url": url, "error": err}
+
+        @settings_app.get("/api/calendar/oauth2callback")
+        def _calendar_oauth_callback(
+            code: Optional[str] = None,
+            state: Optional[str] = None,
+            error: Optional[str] = None,
+        ) -> HTMLResponse:
+            """Handle OAuth redirect callback from Google."""
+            if error or not code or not state:
+                return HTMLResponse(
+                    f"<html><body style='background:#09090b;color:#f87171;font-family:sans-serif;text-align:center;padding-top:50px;'>"
+                    f"<h2>❌ Google 인증 실패</h2><p>{error or '인증 코드가 전달되지 않았습니다.'}</p>"
+                    f"<button onclick='window.close()' style='padding:8px 16px;cursor:pointer;'>창 닫기</button></body></html>"
+                )
+            success = calendar_service.exchange_code(code, state)
+            if success:
+                return HTMLResponse(
+                    """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Google Calendar 연동 완료</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #09090b; color: #f4f4f5; display: grid; place-items: center; height: 100vh; margin: 0; }
+    .card { text-align: center; padding: 36px 40px; background: #18181b; border-radius: 16px; border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 12px 32px rgba(0,0,0,0.5); max-width: 420px; }
+    h2 { color: #4ade80; margin: 0 0 12px 0; font-size: 1.4rem; }
+    p { color: #a1a1aa; font-size: 0.95rem; line-height: 1.5; margin-bottom: 24px; }
+    button { background: #6366f1; color: #ffffff; border: none; padding: 10px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; }
+    button:hover { background: #4f46e5; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>✅ Google Calendar 연동 완료!</h2>
+    <p>Reachy Mini와 Google 계정이 성공적으로 연결되었습니다.<br>이 창을 닫고 설정 화면으로 돌아가세요.</p>
+    <button onclick="window.close()">창 닫기</button>
+  </div>
+  <script>
+    if (window.opener) {
+      window.opener.postMessage({ type: "GOOGLE_OAUTH_SUCCESS" }, "*");
+    }
+    setTimeout(() => window.close(), 2500);
+  </script>
+</body>
+</html>"""
+                )
+            return HTMLResponse(
+                "<html><body style='background:#09090b;color:#f87171;font-family:sans-serif;text-align:center;padding-top:50px;'>"
+                "<h2>❌ 토큰 발급 실패</h2><p>OAuth 토큰을 교환하지 못했습니다. 서버의 Google OAuth 설정을 확인해 주세요.</p>"
+                "<button onclick='window.close()' style='padding:8px 16px;cursor:pointer;'>창 닫기</button></body></html>"
+            )
+
+        @settings_app.get("/api/calendar/events")
+        def _get_calendar_events() -> dict[str, Any]:
+            """Return today's calendar events."""
+            return calendar_service.get_events(target_date="today")
 
         # ── JSON-RPC control surface (/rpc) ──────────────────────────────
         # The single wire format both the local browser UI and remote WebRTC
@@ -603,6 +814,8 @@ class LocalStream:
 
         @rpc.method("backend.config")  # type: ignore[untyped-decorator]
         def _rpc_backend_config(params: dict[str, object]) -> dict[str, object]:
+            config.CONVERSATION_BACKEND = "huggingface"
+            self._persist_env_values({CONVERSATION_BACKEND_ENV: "hf"})
             hf_selection = get_hf_connection_selection()
             hf_mode = str(params.get("hf_mode") or hf_selection.mode).strip().lower()
             if hf_mode == HF_LOCAL_CONNECTION_MODE:
@@ -759,7 +972,7 @@ class LocalStream:
         self._init_settings_ui_if_needed()
 
         # If the Hugging Face target is still missing -> wait until provided via the settings UI
-        if not has_hf_realtime_target():
+        if config.CONVERSATION_BACKEND == HF_BACKEND and not has_hf_realtime_target():
             self._set_backend_connection_state("waiting_for_config", f"{HF_REALTIME_WS_URL_ENV} is not configured.")
             if self._settings_app is None:
                 logger.error(

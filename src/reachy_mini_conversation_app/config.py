@@ -87,6 +87,50 @@ HF_LOCAL_CONNECTION_MODE = "local"
 HF_DEPLOYED_CONNECTION_MODE = "deployed"
 HF_REALTIME_SESSION_PROXY_URL = "https://pollen-robotics-reachy-mini-realtime-url.hf.space/session"
 
+# --- OpenAI realtime backend (Korean voice baseline) -------------------------
+CONVERSATION_BACKEND_ENV = "CONVERSATION_BACKEND"
+OPENAI_BACKEND = "openai"
+OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime"
+DEFAULT_OPENAI_REALTIME_MODEL = "gpt-realtime-mini"
+DEFAULT_OPENAI_VOICE = "marin"
+
+# --- Robot daemon connection target ------------------------------------------
+REACHY_MINI_HOST_ENV = "REACHY_MINI_HOST"
+REACHY_MINI_PORT_ENV = "REACHY_MINI_PORT"
+DEFAULT_DAEMON_PORT = 8000
+_LOCAL_DAEMON_HOST_ALIASES = {"sim", "localhost", "127.0.0.1"}
+
+
+@dataclass(frozen=True)
+class DaemonConnection:
+    """Resolved robot daemon connection target for ReachyMini(...) kwargs."""
+
+    host: str | None
+    port: int
+    connection_mode: str | None  # None -> keep the SDK default ("auto")
+
+
+def resolve_daemon_connection(host_value: str | None, port_value: str | None) -> DaemonConnection:
+    """Map REACHY_MINI_HOST/REACHY_MINI_PORT values onto ReachyMini connection kwargs."""
+    port = DEFAULT_DAEMON_PORT
+    raw_port = (port_value or "").strip()
+    if raw_port:
+        try:
+            parsed_port = int(raw_port)
+        except ValueError:
+            parsed_port = -1
+        if 0 < parsed_port < 65536:
+            port = parsed_port
+        else:
+            logger.warning("Invalid %s=%r; using %d.", REACHY_MINI_PORT_ENV, port_value, DEFAULT_DAEMON_PORT)
+
+    host = (host_value or "").strip()
+    if not host:
+        return DaemonConnection(host=None, port=port, connection_mode=None)
+    if host.lower() in _LOCAL_DAEMON_HOST_ALIASES:
+        return DaemonConnection(host=None, port=port, connection_mode="localhost_only")
+    return DaemonConnection(host=host, port=port, connection_mode="network")
+
 
 @dataclass(frozen=True)
 class HFBackendDefaults:
@@ -110,20 +154,12 @@ logger = logging.getLogger(__name__)
 _OBSOLETE_BACKEND_ENV_NAMES = ("BACKEND_PROVIDER", "MODEL_NAME")
 
 
-def _normalize_conversation_backend(value: str | None) -> str:
-    """Normalize the conversation backend identifier ('hf' or 'openai')."""
-    candidate = (value or "").strip().lower()
-    if candidate in {"openai", "oai"}:
-        return OPENAI_BACKEND
-    return "hf"
-
-
 def _warn_on_obsolete_backend_env() -> None:
     """Warn when removed multi-backend selectors are still set."""
     present = [name for name in _OBSOLETE_BACKEND_ENV_NAMES if (os.getenv(name) or "").strip()]
     if present:
         logger.warning(
-            "Ignoring obsolete backend environment variable(s): %s.",
+            "Ignoring obsolete backend environment variable(s): %s. Reachy Mini Conversation supports the Hugging Face backend only.",
             ", ".join(present),
         )
 
@@ -181,10 +217,27 @@ def _normalize_hf_connection_mode(value: str | None) -> str | None:
     return candidate
 
 
+def _normalize_conversation_backend(value: str | None) -> str:
+    """Return the selected conversation backend: Hugging Face (default) or OpenAI."""
+    candidate = (value or "").strip().lower()
+    if not candidate:
+        return HF_BACKEND
+    if candidate in {"hf", HF_BACKEND}:
+        return HF_BACKEND
+    if candidate in {"openai", OPENAI_BACKEND}:
+        return OPENAI_BACKEND
+    logger.warning(
+        "Invalid %s=%r. Expected hf or openai; using hf.",
+        CONVERSATION_BACKEND_ENV,
+        value,
+    )
+    return HF_BACKEND
+
+
 def _normalize_transcription_language(value: str | None) -> str:
-    """Return the configured realtime transcription language."""
+    """Return the configured realtime transcription language, defaulting to Korean ("ko")."""
     candidate = (value or "").strip()
-    return candidate or "en"
+    return candidate or "ko"
 
 
 @dataclass(frozen=True)
@@ -350,6 +403,17 @@ class Config:
     HF_REALTIME_WS_URL = os.getenv(HF_REALTIME_WS_URL_ENV)
     REALTIME_TRANSCRIPTION_LANGUAGE = _normalize_transcription_language(os.getenv(REALTIME_TRANSCRIPTION_LANGUAGE_ENV))
     HF_TOKEN = os.getenv("HF_TOKEN")  # Optional, falls back to hf auth login if not set
+    CONVERSATION_BACKEND = _normalize_conversation_backend(os.getenv(CONVERSATION_BACKEND_ENV))
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    OPENAI_REALTIME_MODEL = (os.getenv("OPENAI_REALTIME_MODEL") or "").strip() or DEFAULT_OPENAI_REALTIME_MODEL
+    OPENAI_VOICE = (os.getenv("OPENAI_VOICE") or "").strip() or DEFAULT_OPENAI_VOICE
+    REACHY_MINI_HOST = os.getenv(REACHY_MINI_HOST_ENV)
+    REACHY_MINI_PORT = os.getenv(REACHY_MINI_PORT_ENV)
+    REACHY_MINI_AUTO_START_DAEMON = _env_flag("REACHY_MINI_AUTO_START_DAEMON", default=False)
+    REACHY_MINI_SLEEP_ON_EXIT = _env_flag("REACHY_MINI_SLEEP_ON_EXIT", default=True)
+    REACHY_MINI_STANDBY_ON_SLEEP = _env_flag("REACHY_MINI_STANDBY_ON_SLEEP", default=True)
+    REACHY_MINI_WAKE_PHRASES = os.getenv("REACHY_MINI_WAKE_PHRASES")
+    REACHY_MINI_DOA_LOOK = _env_flag("REACHY_MINI_DOA_LOOK", default=True)
 
     logger.debug(
         "Backend: %s, HF mode: %s, HF session URL set: %s, HF direct URL set: %s",
@@ -366,7 +430,9 @@ class Config:
     _tools_directory_env = os.getenv("REACHY_MINI_EXTERNAL_TOOLS_DIRECTORY")
     TOOLS_DIRECTORY = Path(_tools_directory_env) if _tools_directory_env else None
     AUTOLOAD_EXTERNAL_TOOLS = _env_flag("AUTOLOAD_EXTERNAL_TOOLS", default=False)
-    REACHY_MINI_CUSTOM_PROFILE = LOCKED_PROFILE or os.getenv("REACHY_MINI_CUSTOM_PROFILE")
+    REACHY_MINI_CUSTOM_PROFILE: str | None = (
+        LOCKED_PROFILE or (os.getenv("REACHY_MINI_CUSTOM_PROFILE") or "").strip() or None
+    )
 
     logger.debug(f"Custom Profile: {REACHY_MINI_CUSTOM_PROFILE}")
 
@@ -472,7 +538,20 @@ def refresh_runtime_config_from_env() -> None:
         os.getenv(REALTIME_TRANSCRIPTION_LANGUAGE_ENV)
     )
     config.HF_TOKEN = os.getenv("HF_TOKEN")
-    config.REACHY_MINI_CUSTOM_PROFILE = LOCKED_PROFILE or os.getenv("REACHY_MINI_CUSTOM_PROFILE")
+    config.CONVERSATION_BACKEND = _normalize_conversation_backend(os.getenv(CONVERSATION_BACKEND_ENV))
+    config.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    config.OPENAI_REALTIME_MODEL = (os.getenv("OPENAI_REALTIME_MODEL") or "").strip() or DEFAULT_OPENAI_REALTIME_MODEL
+    config.OPENAI_VOICE = (os.getenv("OPENAI_VOICE") or "").strip() or DEFAULT_OPENAI_VOICE
+    config.REACHY_MINI_HOST = os.getenv(REACHY_MINI_HOST_ENV)
+    config.REACHY_MINI_PORT = os.getenv(REACHY_MINI_PORT_ENV)
+    config.REACHY_MINI_AUTO_START_DAEMON = _env_flag("REACHY_MINI_AUTO_START_DAEMON", default=False)
+    config.REACHY_MINI_SLEEP_ON_EXIT = _env_flag("REACHY_MINI_SLEEP_ON_EXIT", default=True)
+    config.REACHY_MINI_STANDBY_ON_SLEEP = _env_flag("REACHY_MINI_STANDBY_ON_SLEEP", default=True)
+    config.REACHY_MINI_WAKE_PHRASES = os.getenv("REACHY_MINI_WAKE_PHRASES")
+    config.REACHY_MINI_DOA_LOOK = _env_flag("REACHY_MINI_DOA_LOOK", default=True)
+    config.REACHY_MINI_CUSTOM_PROFILE = (
+        LOCKED_PROFILE or (os.getenv("REACHY_MINI_CUSTOM_PROFILE") or "").strip() or None
+    )
 
 
 def get_available_voices() -> list[str]:
@@ -485,7 +564,7 @@ def get_available_voices() -> list[str]:
 def get_default_voice() -> str:
     """Return the default voice for the active backend."""
     if get_conversation_backend() == OPENAI_BACKEND:
-        return config.OPENAI_VOICE or "marin"
+        return config.OPENAI_VOICE or DEFAULT_OPENAI_VOICE
     return HF_DEFAULTS.voice
 
 

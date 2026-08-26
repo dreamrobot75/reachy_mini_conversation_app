@@ -13,6 +13,7 @@ default_tools = [
   "remember",
   "forget",
   "head_tracking",
+  "get_schedule",
   "pollen_robotics_reachy_mini_search_tool__search_web",
   "pollen_robotics_reachy_mini_weather_tool__get_weather",
   "pollen_robotics_reachy_mini_time_tool__get_time",
@@ -58,7 +59,8 @@ Keep safety in mind when giving guidance.
 
 ## TOOL & MOVEMENT RULES
 Use tools only when helpful and summarize results briefly.
-Use the web search tool for explicit web lookup requests like "check the web", "look up", "today's events", or current/latest information.
+Call the `get_schedule` tool whenever the user asks about their schedule, calendar, upcoming events, or what is planned for today or tomorrow.
+Use the web search tool for explicit web lookup requests like "check the web", "look up", or current news/latest information.
 Use the camera for real visuals only — never invent details.
 The head can move (left/right/up/down/front).
 

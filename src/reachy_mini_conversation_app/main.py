@@ -3,6 +3,7 @@
 from __future__ import annotations
 import sys
 import time
+import signal
 import asyncio
 import logging
 import argparse
@@ -92,6 +93,7 @@ def run(
         config,
         set_instance_path,
         get_conversation_backend,
+        resolve_daemon_connection,
         get_hf_connection_selection,
         resolve_app_timeout_minutes,
         refresh_runtime_config_from_env,
@@ -103,6 +105,9 @@ def run(
 
     logger = setup_logger(args.debug)
     logger.info("Starting Reachy Mini Conversation App")
+    if getattr(args, "profile", None):
+        config.REACHY_MINI_CUSTOM_PROFILE = args.profile
+        logger.info("Using profile from CLI argument: %s", args.profile)
     set_instance_path(instance_path)
     startup_settings = StartupSettings()
 
@@ -124,11 +129,12 @@ def run(
             logger.warning("Failed to load startup settings: %s", e)
 
     if get_conversation_backend() == OPENAI_BACKEND:
-        logger.info(
-            "Configured OpenAI realtime backend (model=%s, voice=%s)",
-            config.OPENAI_REALTIME_MODEL,
-            config.OPENAI_VOICE,
-        )
+        logger.info("Configured OpenAI realtime backend, model: %s", config.OPENAI_REALTIME_MODEL)
+        if not (config.OPENAI_API_KEY or "").strip():
+            logger.error(
+                "CONVERSATION_BACKEND=openai requires OPENAI_API_KEY. Set it in the environment or .env and restart."
+            )
+            sys.exit(1)
     else:
         logger.info(
             "Configured Hugging Face realtime backend, connection mode: %s",
@@ -141,12 +147,50 @@ def run(
 
     if robot is None:
         try:
-            robot_kwargs = {}
+            robot_kwargs: dict[str, Any] = {}
             if args.robot_name is not None:
                 robot_kwargs["robot_name"] = args.robot_name
 
-            logger.info("Initializing ReachyMini (SDK will auto-detect appropriate backend)")
-            robot = ReachyMini(**robot_kwargs)
+            daemon_connection = resolve_daemon_connection(config.REACHY_MINI_HOST, config.REACHY_MINI_PORT)
+            if daemon_connection.connection_mode is not None:
+                robot_kwargs["connection_mode"] = daemon_connection.connection_mode
+            if daemon_connection.host is not None:
+                robot_kwargs["host"] = daemon_connection.host
+            robot_kwargs["port"] = daemon_connection.port
+            daemon_freshly_started = False
+            if daemon_connection.connection_mode == "network" and daemon_connection.host is not None:
+                from reachy_mini_conversation_app.daemon_autostart import ensure_remote_daemon_running
+
+                daemon_freshly_started = (
+                    ensure_remote_daemon_running(
+                        daemon_connection.host,
+                        daemon_connection.port,
+                        auto_start=config.REACHY_MINI_AUTO_START_DAEMON,
+                    )
+                    == "started"
+                )
+            logger.info(
+                "Connecting to Reachy Mini daemon (%s, %s:%d)",
+                daemon_connection.connection_mode or "auto",
+                daemon_connection.host or "localhost",
+                daemon_connection.port,
+            )
+            # A freshly started daemon needs a few seconds to register its media
+            # producer; retry until the connection actually succeeds.
+            connect_attempts = 4 if daemon_freshly_started else 1
+            for attempt in range(1, connect_attempts + 1):
+                try:
+                    robot = ReachyMini(**robot_kwargs)
+                    break
+                except Exception:
+                    if attempt == connect_attempts:
+                        raise
+                    logger.info(
+                        "Daemon not fully ready yet (attempt %d/%d); retrying in 5 s...",
+                        attempt,
+                        connect_attempts,
+                    )
+                    time.sleep(5.0)
 
         except TimeoutError as e:
             logger.error(f"Connection timeout: Failed to connect to Reachy Mini daemon. Details: {e}")
@@ -175,19 +219,26 @@ def run(
     )
 
     def build_handler(startup_voice: Optional[str] = None) -> ConversationHandler:
-        """Build a realtime handler for the current runtime config."""
+        """Build the realtime conversation handler for the configured backend."""
+        if get_conversation_backend() == OPENAI_BACKEND:
+            from reachy_mini_conversation_app.openai_realtime import OpenAIRealtimeHandler
+
+            logger.info("Using OpenAI realtime handler (model=%s)", config.OPENAI_REALTIME_MODEL)
+            return OpenAIRealtimeHandler(
+                deps,
+                instance_path=instance_path,
+                startup_voice=startup_voice,
+            )
+
         from reachy_mini_conversation_app.huggingface_realtime import HuggingFaceRealtimeHandler
 
-        if get_conversation_backend() == OPENAI_BACKEND:
-            logger.info("Using OpenAI Realtime handler")
-        else:
-            hf_connection_selection = get_hf_connection_selection()
-            transport_label = (
-                "Hugging Face direct websocket"
-                if hf_connection_selection.mode == HF_LOCAL_CONNECTION_MODE and hf_connection_selection.has_target
-                else "Hugging Face session proxy"
-            )
-            logger.info("Using Hugging Face realtime handler (%s)", transport_label)
+        hf_connection_selection = get_hf_connection_selection()
+        transport_label = (
+            "Hugging Face direct websocket"
+            if hf_connection_selection.mode == HF_LOCAL_CONNECTION_MODE and hf_connection_selection.has_target
+            else "Hugging Face session proxy"
+        )
+        logger.info("Using Hugging Face realtime handler (%s)", transport_label)
         return HuggingFaceRealtimeHandler(
             deps,
             instance_path=instance_path,
@@ -276,10 +327,44 @@ def run(
         finally:
             go_to_sleep_lock.release()
 
-    deps.go_to_sleep = go_to_sleep_and_stop_app
+    def go_to_sleep_action() -> dict[str, Any]:
+        """Route voice go_to_sleep to standby (wake-word wait) or the legacy app stop.
+
+        Standby keeps the app and realtime session alive so a wake phrase can
+        resume the conversation; only handlers that support it (OpenAI backend)
+        and REACHY_MINI_STANDBY_ON_SLEEP=1 take that path.
+        """
+        active_handler = getattr(stream_manager, "handler", None) or handler
+        if config.REACHY_MINI_STANDBY_ON_SLEEP and hasattr(active_handler, "request_standby"):
+            standby_result: dict[str, Any] = active_handler.request_standby()
+            return standby_result
+        return go_to_sleep_and_stop_app()
+
+    deps.go_to_sleep = go_to_sleep_action
 
     def run_go_to_sleep_tool() -> dict[str, Any]:
         return app_lifecycle.run_go_to_sleep_tool(deps, logger)
+
+    sound_watcher = None
+    if config.REACHY_MINI_DOA_LOOK:
+        from reachy_mini_conversation_app.sound_direction import SpeakerGaze, SoundDirectionWatcher
+
+        def _doa_gaze_enabled() -> bool:
+            """Gaze only while awake; standby records direction without moving."""
+            active_handler = getattr(stream_manager, "handler", None) or handler
+            return not bool(getattr(active_handler, "in_standby", False))
+
+        doa_target = resolve_daemon_connection(config.REACHY_MINI_HOST, config.REACHY_MINI_PORT)
+        speaker_gaze = SpeakerGaze(movement_manager, robot, is_enabled=_doa_gaze_enabled)
+        sound_watcher = SoundDirectionWatcher(
+            doa_target.host or "localhost",
+            doa_target.port,
+            on_speech=speaker_gaze.on_speech,
+        )
+        sound_watcher.start()
+        if hasattr(handler, "sound_watcher"):
+            # Class attribute so UI-triggered handler rebuilds inherit the watcher.
+            type(handler).sound_watcher = sound_watcher
 
     if args.ui and settings_app is None and effective_settings_app is not None:
         import uvicorn
@@ -329,11 +414,40 @@ def run(
     if app_stop_event:
         threading.Thread(target=poll_stop_event, daemon=True).start()
 
+    # Route Windows Ctrl+Break / console close through the same path as Ctrl+C
+    # so sleep-on-exit also covers them.
+    if hasattr(signal, "SIGBREAK"):
+
+        def _raise_keyboard_interrupt(_signum: int, _frame: object) -> None:
+            raise KeyboardInterrupt
+
+        signal.signal(signal.SIGBREAK, _raise_keyboard_interrupt)
+
+    keyboard_interrupted = False
     try:
         stream_manager.launch()
     except KeyboardInterrupt:
+        keyboard_interrupted = True
         logger.info("Keyboard interruption in main thread... closing server.")
     finally:
+        # Direct console exits put the robot to sleep (opt-out via
+        # REACHY_MINI_SLEEP_ON_EXIT=0). External stops (dashboard/mobile)
+        # keep the original behavior: stop the app, leave the robot awake.
+        # In standby the robot is already in the sleep pose — nothing to do.
+        active_handler = getattr(stream_manager, "handler", None) or handler
+        handler_in_standby = bool(getattr(active_handler, "in_standby", False))
+        if (
+            keyboard_interrupted
+            and config.REACHY_MINI_SLEEP_ON_EXIT
+            and not go_to_sleep_requested.is_set()
+            and not handler_in_standby
+        ):
+            logger.info("Sleep-on-exit: running go_to_sleep before shutdown...")
+            run_go_to_sleep_tool()
+
+        if sound_watcher is not None:
+            sound_watcher.stop()
+
         if own_ui_server is not None:
             own_ui_server.should_exit = True
 
