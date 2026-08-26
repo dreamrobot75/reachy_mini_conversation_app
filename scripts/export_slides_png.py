@@ -1,15 +1,17 @@
-import os
-import subprocess
-import sys
-import time
+"""Export HTML slides to high-resolution PNG images."""
 
-def main():
+import os
+import sys
+import subprocess
+
+
+def main() -> None:
+    """Export all HTML presentation slides to 1080p PNG images."""
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     html_path = os.path.join(repo_root, "docs", "oss_report", "발표자료.html")
     output_dir = os.path.join(repo_root, "docs", "oss_report", "slides_png")
     os.makedirs(output_dir, exist_ok=True)
 
-    # Detect browser
     edge_paths = [
         r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
         r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
@@ -54,7 +56,7 @@ def main():
     ]
 
     for i in range(total_slides):
-        name = slide_names[i] if i < len(slide_names) else f"slide_{i+1:02d}"
+        name = slide_names[i] if i < len(slide_names) else f"slide_{i + 1:02d}"
         output_png = os.path.join(output_dir, f"{name}.png")
         url = f"file:///{html_path.replace(os.sep, '/')}?slide={i}&capture=true"
 
@@ -70,14 +72,15 @@ def main():
             url,
         ]
 
-        print(f"[{i+1}/{total_slides}] Capturing {name}.png ...")
-        res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"[{i + 1}/{total_slides}] Capturing {name}.png ...")
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if os.path.exists(output_png):
             print(f"  -> Saved ({os.path.getsize(output_png):,} bytes)")
         else:
             print(f"  -> Failed to create {name}.png")
 
     print(f"\nAll slides exported successfully to: {output_dir}")
+
 
 if __name__ == "__main__":
     main()
